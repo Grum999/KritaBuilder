@@ -1,0 +1,1506 @@
+#!/bin/bash
+
+#
+#
+#
+#
+
+# KBuilder Version
+KBUILDER_NAME=KBuilder
+KBUILDER_VERSION=1.0.0
+
+# current directory
+CDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# include directory
+CINCDIR="$CDIR/data/src-inc"
+
+# verbose level
+# 0: quiet
+# 1: normal
+# 2: high
+OPT_VERBOSE=1
+
+
+#
+APPIMG_USER_HOME=/home/appimage
+
+KRITA_EXEC=$APPIMG_USER_HOME/bin/krita-cmd.sh
+
+
+function display() {
+    if [ $OPT_VERBOSE -eq 0 ]; then
+        exit 0
+    fi
+    echo -e $2 $1
+}
+
+function displayHeader() {
+    if [ $OPT_VERBOSE -eq 0 ]; then
+        exit 0
+    fi
+    echo    "========================================"
+    echo -e "== $1"
+    echo    "========================================"
+}
+
+function displayStep() {
+    if [ $OPT_VERBOSE -eq 0 ]; then
+        exit 0
+    fi
+    echo -n -e  ".. $1: "
+}
+
+function displayNfo() {
+    if [ $OPT_VERBOSE -eq 0 ]; then
+        exit 0
+    fi
+    echo -e $2 "   $1"
+}
+
+function displayKo() {
+    if [ $OPT_VERBOSE -eq 0 ]; then
+        exit 0
+    fi
+    echo "KO"
+}
+
+function displayOk() {
+    if [ $OPT_VERBOSE -eq 0 ]; then
+        exit 0
+    fi
+    echo "OK"
+}
+
+function checkArgs() {
+    # check if given arguments are valid
+
+    NAME=$1
+    shift
+
+    SHORT=$1
+    shift
+
+    LONG=$1
+    shift
+
+    {
+        IFS=$'\0' read -r -d '' ERRORS;
+        IFS=$'\0' read -r -d '' OPTIONS;
+    } < <((printf '\0%s\0' "$(getopt -o $SHORT --long $LONG -- $@)" 1>&2) 2>&1)
+
+    if [ "$ERRORS" != "" ]; then
+        echo -e "${ERRORS:8}\n$(typeForHelp $NAME)">&2
+        exit 1
+    fi
+    echo $OPTIONS
+}
+
+function getDefaultArgs() {
+    # $1 = env name
+    # $2 = command
+    local CONFIG_FILE=$CDIR/data/.default-args
+    local COMMAND=$1
+    echo $(sed -nr "s/^default_args_$COMMAND=(.*)/\1/ip" $CONFIG_FILE)
+}
+
+function typeForHelp() {
+    # Display help command to type to get help
+    COMMAND=$(basename "$0")
+    if [ "$1" != "" ]; then
+        COMMAND="$COMMAND $1"
+    fi
+    echo "To get help, type: "
+    echo "  $COMMAND --help"
+}
+
+
+function commandHelp() {
+    # Display help for command
+
+    USAGE="Usage: $(basename "$0") $1"
+
+    if [ "$1" == "" ]; then
+        USAGE="$USAGE [COMMAND] [OPTIONS]
+
+  Manage Krita build environments
+
+  Available commands:
+    new                             Create a new build environment
+    remove                          Remove a build environment
+    rename                          Rename a build environment
+    list                            List build environments
+    start                           Start a build environment
+    stop                            Stop a running build environment
+    build                           Build Krita from environment
+    krita                           Execute Krita from environment
+    logs                            Get last build logs
+    tool                            Execute Docker tool
+
+  Available options:
+    -h,         --help              Display help
+    -v,         --version           Display version
+  "
+    elif [ "$1" == "new" ]; then
+        USAGE="$USAGE [OPTIONS] NAME
+
+  Create a new build environment
+
+  Following tasks are executed during process:
+    1) Initialise environment directories
+    2) Retrieve Krita source files
+    3) Create a docker image
+    4) Start docker container
+    5) Retrieve dependencies
+    6) Build dependencies
+    7) Build krita
+
+  Full execution can take a long time
+
+  Available options:
+    -h,         --help              Display this help message
+    -cREF,      --clone=REF         Create a new build environment by cloning REF environment
+                                    Doing a clone is faster as download & build information are
+                                    already available
+    -sPATH,     --source-path=PATH  Full path to Krita source files
+                                    Can be also an url to a git repository
+                                    If not provided, installer will automatically
+                                    use official Krita git source repository
+    -v,         --verbose           By default, only steps information are provided
+                                    Verbose mode allows to provide additional output information
+                --no-build          Do not build Dependencies, do not build Krita
+                                    You'll have to execute build manually after environment is created
+                --no-cache          Do not use cache to create docker image
+                                    This can be useful to rebuild image from latest version
+  "
+    elif [ "$1" == "remove" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME]
+
+  Remove a build environment
+
+  Available options:
+    -h,         --help              Display this help message
+    -a,         --all               Remove all environments
+                                    When provided, environment NAME is ignored
+    -v,         --verbose           By default, only steps information are provided
+                                    Verbose mode allows to provide additional output information
+  "
+    elif [ "$1" == "rename" ]; then
+        USAGE="$USAGE OLDNAME NEWNAME
+
+  Rename a build environment
+
+  Available options:
+    -h,         --help              Display this help message
+    -f,         --force             Force rename if environment is running
+                                    This will stop environment
+    -v,         --verbose           By default, only steps information are provided
+                                    Verbose mode allows to provide additional output information
+
+  If OLDNAME build environment is running, then action will be cancelled
+  If a NEWNAME build environment already exist, then action will be cancelled
+  "
+    elif [ "$1" == "list" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME]
+
+  List build environments
+
+    -h,         --help              Display this help message
+    -c,         --count             Display number of environments
+    -s,         --size              Display environments size
+    -t,         --top               Display running environment top information (cpu, memory)
+    -u,         --source-uri        Display environments source uri
+
+  If NAME is provided, information are filtered for given environment name
+  "
+    elif [ "$1" == "start" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME]
+
+    Start a build environment
+
+    -h,         --help              Display this help message
+    -a,         --all               Start all environments
+                                    When provided, environment NAME is ignored
+    -r,         --restart           If already started, force environment to restart
+
+  If NAME is not provided and option --all not set, latest started environment will be started
+  "
+    elif [ "$1" == "stop" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME]
+
+    Stop a build environment
+
+    -h,         --help              Display this help message
+    -a,         --all               Stop all started environments
+                                    When provided, environment NAME is ignored
+    -v,         --verbose           By default, only steps information are provided
+                                    Verbose mode allows to provide additional output information
+
+  If NAME is not provided and --all option not set, latest started environment will be stopped
+  "
+    elif [ "$1" == "build" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME]
+
+  Build Krita from environment
+
+    -h,         --help              Display this help message
+    -a,         --appimage          Build an appimage
+    -c,         --clean             Do a make clean before build
+    -d,         --deps              Build Krita deps
+    -jN,        --Jobs=N            Use N jobs for build
+    -r,         --run               Run Krita after build
+    -s,         --clean-sip         Clean-up SIP directory before build
+    -t,         --time              Display execution times
+    -v,         --verbose           By default, only steps information are provided
+                                    Verbose mode allows to provide additional output information
+                --krita-asan        Build Krita with address sanitizer active
+                --no-debug          Disable all debug options
+                --no-tests          Disable building of tests
+                --pch               Enable the usage of PCH headers (require huge amount of space on disk)
+                --qt-asan           Enable address sanitizer for Qt (implies --qt-debug)
+                --qt-debug          Enable debugging info for Qt
+
+  If NAME is not provided, build will be executed on last environment on which a build has been made
+  "
+    elif [ "$1" == "krita" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME]
+
+  Execute Krita from environment
+
+    -h,         --help              Display this help message
+    -a,         --appimage          Run last built appimage, if any
+    -sFACTOR,   --scale=FACTOR      Define scale factor for UI
+
+    If NAME is not provided, Krita will be started from last environment on which a build has been made
+  "
+    elif [ "$1" == "logs" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME]
+
+  Display last build logs
+
+    -h,         --help              Display this help message
+    -f,         --full              Display full log
+    -t,         --time              Display execution times
+    -oEDITOR,   --open=EDITOR       Open logs wih given editor
+                                    Available editors
+                                    - emacs
+                                    - nano
+                                    - vim
+                                    - mc
+
+    If NAME is not provided, logs will be retrieved from last environment on which a build has been made
+  "
+    elif [ "$1" == "tool" ]; then
+        USAGE="$USAGE [OPTIONS] [NAME] [TOOL]
+
+  Execute a tool within Docker
+
+    -h,         --help              Display this help message
+    -r,         --root              Execute tool as root
+
+    If NAME is not provided, tool will be executed from last environment on which a build has been made
+
+    Given TOOL can be:
+    - bash                          Enter in shell; default tool if none is specified
+    - mc                            Execue Midnight Commander
+    - htop                          Execute htop
+  "
+    else
+        USAGE="Unknown command: $1"
+    fi
+
+    echo -e "$USAGE" >&2
+    return 0
+}
+
+
+function commandNone() {
+    ARGS=$(checkArgs " " "hv" "help,version" "$@") || exit $?
+    eval set -- "$ARGS"
+    while true; do
+        case "$1" in
+            -v | --version)
+                echo "$KBUILDER_NAME v$KBUILDER_VERSION"
+                exit 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    if [ "$1" != "" ]; then
+        echo "Unknown command: $1"
+        typeForHelp
+        return 1
+    else
+        commandHelp
+        return $?
+    fi
+}
+
+function commandNew() {
+    COMMAND="$1"
+    shift
+    ARGS=$(checkArgs "$COMMAND" "hc:s:v" "help,clone:,source-path:,verbose,no-build,no-cache" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    if [ $# -eq 1 ]; then
+        commandHelp $COMMAND
+        return $?
+    fi
+
+    OPT_NO_CACHE=0
+    OPT_NO_BUILD=0
+    OPT_CLONE_FROM=
+    OPT_SOURCE_PATH="https://invent.kde.org/graphics/krita.git"
+    OPT_ENVNAME=
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -c | --clone)
+                shift
+                OPT_CLONE_FROM=$1
+                ;;
+            -s | --source-path)
+                shift
+                OPT_SOURCE_PATH=$1
+                ;;
+            -v | --verbose)
+                OPT_VERBOSE=2
+                ;;
+            --no-cache)
+                OPT_NO_CACHE=1
+                ;;
+            --no-build)
+                OPT_NO_BUILD=1
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    displayHeader "Create new environment"
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    displayStep "Check name ($ENVIRONMENT_NAME)"
+
+    environmentCheckName $ENVIRONMENT_NAME
+    case "$?" in
+        1)
+            # empty
+            displayKo
+            displayNfo "Environment name is mandatory"
+            return 1
+            ;;
+        2)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NAME' already exists"
+            return 1
+            ;;
+        4)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NAME' is not valid"
+            displayNfo "Allowed characters are:"
+            displayNfo "- alpha (lower case) 'a' to 'z'"
+            displayNfo "- digit, '0' to '9'"
+            displayNfo "- underscore, '_'"
+            return 1
+            ;;
+    esac
+
+    displayOk
+
+    if [ "$OPT_CLONE_FROM" != "" ]; then
+        displayStep "Check clone reference"
+
+        environmentCheckName $OPT_CLONE_FROM
+
+        if [ $? -eq 3 ]; then
+            displayKo
+            displayNfo "Environment '$OPT_CLONE_FROM' not found"
+            return 1
+        fi
+        displayOk
+    fi
+
+    displayStep "Check Krita source directory"
+    if [[ "$OPT_SOURCE_PATH" =~ ^https?:// ]]; then
+        displayOk
+    else
+        if [ ! -d "$OPT_SOURCE_PATH" ]; then
+            displayKo
+            displayNfo "Path not found: $OPT_SOURCE_PATH"
+            return 1
+        fi
+        displayOk
+    fi
+
+    environmentCreate $ENVIRONMENT_NAME $OPT_SOURCE_PATH || exit 1
+    dockerImageCreate $ENVIRONMENT_NAME $OPT_NO_CACHE || exit 1
+    dockerContainerRun $ENVIRONMENT_NAME || exit 1
+    environmentLastStarted ADD $ENVIRONMENT_NAME
+
+    if [ $OPT_NO_BUILD -eq 0 ]; then
+        commandBuild commandBuild --deps
+    fi
+
+    return $?
+}
+
+function commandRemove() {
+    COMMAND="$1"
+    shift
+    ARGS=$(checkArgs "$COMMAND" "hva" "help,version,all" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    if [ $# -eq 1 ]; then
+        commandHelp $COMMAND
+        return $?
+    fi
+
+    OPT_ALL=0
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -a | --all)
+                OPT_ALL=1
+                ;;
+            -v | --verbose)
+                OPT_VERBOSE=2
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    displayHeader "Remove environment"
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+
+    if [ $OPT_ALL -eq 1 ]; then
+        local ENV_LIST=($(environmentList))
+    else
+        displayStep "Check name ($ENVIRONMENT_NAME)"
+
+        environmentCheckName $ENVIRONMENT_NAME
+        case "$?" in
+            1)
+                # empty
+                displayKo
+                displayNfo "Environment name is mandatory"
+                return 1
+                ;;
+            3 | 4)
+                displayKo
+                displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+                return 1
+                ;;
+        esac
+
+        displayOk
+        local ENV_LIST=($ENVIRONMENT_NAME)
+    fi
+
+    SEP_LINE=""
+    for ENV_NAME in ${ENV_LIST[@]}; do
+        display $SEP_LINE -n
+        if [ $OPT_ALL -eq 1 ]; then
+            displayStep "Remove environment"
+            display $ENV_NAME
+        fi
+        dockerContainerCleanup $ENV_NAME
+        dockerImageCleanup $ENV_NAME
+        environmentCleanup $ENV_NAME
+        SEP_LINE=$"\n"
+    done
+
+    return $?
+}
+
+function commandRename() {
+    COMMAND="$1"
+    shift
+    ARGS=$(checkArgs "$COMMAND" "hfv" "help,force,verbose" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    if [ $# -eq 1 ]; then
+        commandHelp $COMMAND
+        return $?
+    fi
+
+    OPT_FORCE=0
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -v | --verbose)
+                OPT_VERBOSE=2
+                ;;
+            -f | --force)
+                OPT_FORCE=1
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    displayHeader "Rename environment"
+
+    ENVIRONMENT_OLDNAME=$1
+    ENVIRONMENT_NEWNAME=$2
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    displayStep "Check current name ($ENVIRONMENT_OLDNAME)"
+
+    environmentCheckName $ENVIRONMENT_OLDNAME
+    case "$?" in
+        1)
+            # empty
+            displayKo
+            displayNfo "Environment name is mandatory"
+            return 1
+            ;;
+        3 | 4)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_OLDNAME' not found"
+            return 1
+            ;;
+    esac
+
+    displayOk
+
+    displayStep "Check new name ($ENVIRONMENT_NEWNAME)"
+
+    environmentCheckName $ENVIRONMENT_NEWNAME
+    case "$?" in
+        1)
+            # empty
+            displayKo
+            displayNfo "Environment name is mandatory"
+            return 1
+            ;;
+        2)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NEWNAME' already exists"
+            return 1
+            ;;
+        4)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NEWNAME' is not valid"
+            displayNfo "Allowed characters are:"
+            displayNfo "- alpha (lower case) 'a' to 'z'"
+            displayNfo "- digit, '0' to '9'"
+            displayNfo "- underscore, '_'"
+            return 1
+            ;;
+    esac
+
+    displayOk
+
+    displayStep "Check environment is stopped"
+
+    dockerContainerIsRunning $ENVIRONMENT_OLDNAME
+    if [ $? -eq 1 ]; then
+        # container musty be stopped as volumes are referring directories for which
+        # path will be modified
+        if [ $OPT_FORCE -eq 1 ]; then
+            display "running..."
+
+            dockerContainerStop $ENVIRONMENT_OLDNAME
+            if [ $? -eq 1 ]; then
+                return 1
+            fi
+        else
+            displayKo
+            displayNfo "Environment '$ENVIRONMENT_OLDNAME' must be stopped before being renamed"
+            return 1
+        fi
+    else
+        displayOk
+    fi
+
+    dockerImageRename $ENVIRONMENT_OLDNAME $ENVIRONMENT_NEWNAME
+    environmentRename $ENVIRONMENT_OLDNAME $ENVIRONMENT_NEWNAME
+
+    return $?
+}
+
+function commandList() {
+    COMMAND="$1"
+    shift
+
+    ARGS=$(checkArgs "$COMMAND" "htsuc" "help,top,size,source-uri,count" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    OPT_TOP=0
+    OPT_SIZE=0
+    OPT_SRC_URI=0
+    OPT_COUNT=0
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -t | --top)
+                OPT_TOP=1
+                ;;
+            -s | --size)
+                OPT_SIZE=1
+                ;;
+            -u | --src-uri)
+                OPT_SRC_URI=1
+                ;;
+            -c | --count)
+                OPT_COUNT=1
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    displayHeader "Environments"
+
+    if [ "$ENVIRONMENT_NAME" != "" ]; then
+        displayStep "Check name ($ENVIRONMENT_NAME)"
+
+        environmentCheckName $ENVIRONMENT_NAME
+        case "$?" in
+            3 | 4)
+                displayKo
+                displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+                return 1
+                ;;
+        esac
+        displayOk
+    fi
+
+    if [ $OPT_TOP -eq 1 ]; then
+        dockerContainerStats $ENVIRONMENT_NAME
+        return 0
+    else
+        if [ "$ENVIRONMENT_NAME" != "" ]; then
+            local ENV_LIST=($ENVIRONMENT_NAME)
+        else
+            local ENV_LIST=($(environmentList))
+        fi
+
+        if [ $OPT_COUNT -eq 1 ]; then
+            displayStep "Available environments"
+            echo ${#ENV_LIST[@]}
+        fi
+
+        displayStep "Environments"
+        display ""
+
+        # format
+        # name               status
+        # <-----------------><----->
+
+        DOT_NAME=".................."
+        SPACES_NAME="                   "
+        SPACES_STATUS="              "
+        SEP_LINE=""
+        for ENV_NAME in ${ENV_LIST[@]}; do
+            display $SEP_LINE -n
+            ENV_NFO="$ENV_NAME${SPACES_NAME:${#ENV_NAME}}"
+            ENV_STATUS="stopped"
+            dockerContainerIsRunning $ENV_NAME
+            if [ $? -eq 1 ]; then
+                ENV_STATUS="running"
+            fi
+            ENV_NFO="$ENV_NFO $ENV_STATUS${SPACES_STATUS:${#ENV_STATUS}}"
+
+            if [ $OPT_SRC_URI -eq 1 ]; then
+                source $(environmentConfigFile $ENV_NAME)
+
+                ENV_NFO="$ENV_NFO $KRITA_SRC"
+            fi
+
+            displayNfo "- $ENV_NFO"
+
+            if [ $OPT_SIZE -eq 1 ]; then
+                ENV_PATH=$(environmentPathName $ENV_NAME)
+                ENV_SIZES=$(du -h --max-depth=1 --total $ENV_PATH | grep -v "$ENV_PATH$")
+
+                oIFS="$IFS"
+                IFS=$'\n'
+                for ENV_SIZE in $ENV_SIZES; do
+                    if [[ $ENV_SIZE =~ total$ ]]; then
+                        ENV_SIZE_NFO=${ENV_SIZE//[[:space:]]/:}
+                        ENV_SIZE_ARR=(${ENV_SIZE_NFO//:/$'\n'})
+                        displayNfo "  ${ENV_SIZE_ARR[1]} ${DOT_NAME:${#ENV_SIZE_ARR[1]}} ${ENV_SIZE_ARR[0]} "
+                    else
+                        ENV_SIZE_NFO=${ENV_SIZE//[[:space:]]$ENV_PATH/:}
+                        ENV_SIZE_ARR=(${ENV_SIZE_NFO//:/$'\n'})
+                        displayNfo "  ${ENV_SIZE_ARR[1]}${SPACES_NAME:${#ENV_SIZE_ARR[1]}} ${ENV_SIZE_ARR[0]} "
+                    fi
+                done
+                IFS="$oIFS"
+                SEP_LINE=$"\n"
+            fi
+        done
+    fi
+
+    return $?
+}
+
+function commandStart() {
+    COMMAND="$1"
+    shift
+    ARGS=$(checkArgs "$COMMAND" "harv" "help,all,restart,verbose" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    OPT_ALL=0
+    OPT_RESTART=0
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -a | --all)
+                OPT_ALL=1
+                ;;
+            -r | --restart)
+                OPT_RESTART=1
+                ;;
+            -v | --verbose)
+                OPT_VERBOSE=2
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    displayHeader "Start environment"
+
+    if [ "$ENVIRONMENT_NAME" != "" ]; then
+        displayStep "Check name ($ENVIRONMENT_NAME)"
+
+        environmentCheckName $ENVIRONMENT_NAME
+        case "$?" in
+            3 | 4)
+                displayKo
+                displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+                return 1
+                ;;
+        esac
+        displayOk
+
+        # if name is provided, cancel "--all" option
+        OPT_ALL=0
+    elif [ $OPT_ALL -eq 0 ]; then
+        # search for last started Environment
+        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastCreated GET)
+        fi
+    fi
+
+    if [ $OPT_ALL -eq 1 ]; then
+        local ENV_LIST=($(environmentList))
+    elif [ "$ENVIRONMENT_NAME" != "" ]; then
+        local ENV_LIST=($ENVIRONMENT_NAME)
+    else
+        display "Can't find environment to start"
+        return 1
+    fi
+
+    for ENV_NAME in ${ENV_LIST[@]}; do
+        dockerContainerRun $ENV_NAME 1 $OPT_RESTART
+        environmentLastStarted ADD $ENV_NAME
+    done
+
+    return $?
+}
+
+function commandStop() {
+    COMMAND="$1"
+    shift
+    ARGS=$(checkArgs "$COMMAND" "hav" "help,all,verbose" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    OPT_ALL=0
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -a | --all)
+                OPT_ALL=1
+                ;;
+            -v | --verbose)
+                OPT_VERBOSE=2
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    displayHeader "Stop environment"
+
+    if [ "$ENVIRONMENT_NAME" != "" ]; then
+        displayStep "Check name ($ENVIRONMENT_NAME)"
+
+        environmentCheckName $ENVIRONMENT_NAME
+        case "$?" in
+            3 | 4)
+                displayKo
+                displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+                return 1
+                ;;
+        esac
+        displayOk
+
+        # if name is provided, cancel "--all" option
+        OPT_ALL=0
+    elif [ $OPT_ALL -eq 0 ]; then
+        # search for last started Environment
+        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastCreated GET)
+        fi
+    fi
+
+    if [ $OPT_ALL -eq 1 ]; then
+        local ENV_LIST=($(environmentList))
+    elif [ "$ENVIRONMENT_NAME" != "" ]; then
+        local ENV_LIST=($ENVIRONMENT_NAME)
+    else
+        display "Can't find environment to stop"
+        return 1
+    fi
+
+    for ENV_NAME in ${ENV_LIST[@]}; do
+        dockerContainerStop $ENV_NAME 1
+    done
+
+    return $?
+}
+
+function commandBuild() {
+    COMMAND="$1"
+    shift
+
+    ARGS=$(checkArgs "$COMMAND" "hacsj:rdvt" "help,appimage,clean,clean-sip,jobs:,run,pch,no-tests,deps,krita-asan,qt-asan,qt-debug,verbose,time,no-debug" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    OPT_APPIMG=0
+    OPT_CLEAN=0
+    OPT_CLEAN_SIP=0
+    OPT_RUN_KRITA=0
+    OPT_JOBS=$(nproc)
+    OPT_BUILD_DEPS=0
+    OPT_QT_DEBUG=0
+    OPT_QT_ASAN=0
+    OPT_ENABLE_PCH=0
+    OPT_ENABLE_TESTS=1
+    OPT_ENABLE_DEBUG=1
+    OPT_TIME=0
+
+    KRITA_EXTRA_CMAKE_OPTIONS=
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -a | --appimage)
+                OPT_APPIMG=1
+                ;;
+            -c | --clean)
+                OPT_CLEAN=1
+                ;;
+            -d | --deps)
+                OPT_BUILD_DEPS=1
+                ;;
+            -s | --clean-sip)
+                OPT_CLEAN_SIP=1
+                ;;
+            -j | --jobs)
+                shift
+                OPT_JOBS=$1
+                ;;
+            -r | --run)
+                OPT_RUN_KRITA=1
+                ;;
+            -t | --time)
+                OPT_TIME=1
+                ;;
+            -v | --verbose)
+                OPT_VERBOSE=2
+                ;;
+            --krita-asan)
+                KRITA_EXTRA_CMAKE_OPTIONS="-DECM_ENABLE_SANITIZERS=\'address\'"
+                ;;
+            --no-debug)
+                OPT_ENABLE_DEBUG=0
+                ;;
+            --no-tests)
+                OPT_ENABLE_TESTS=0
+                ;;
+            --pch)
+                OPT_ENABLE_PCH=1
+                ;;
+            --qt-asan)
+                OPT_QT_ASAN=1
+                ;;
+            --qt-debug)
+                OPT_QT_DEBUG=1
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    KRITA_EXTRA_CMAKE_OPTIONS="$KRITA_EXTRA_CMAKE_OPTIONS -DKRITA_ENABLE_PCH=$OPT_ENABLE_PCH -DBUILD_TESTING=$OPT_ENABLE_TESTS"
+
+    if [ $OPT_ENABLE_DEBUG -eq 0 ]; then
+        KRITA_EXTRA_CMAKE_OPTIONS="$KRITA_EXTRA_CMAKE_OPTIONS -DCMAKE_BUILD_TYPE=Release -DKRITA_DEVS=OFF -DBUILD_TESTING=FALSE"
+    else
+        KRITA_EXTRA_CMAKE_OPTIONS="$KRITA_EXTRA_CMAKE_OPTIONS -DCMAKE_BUILD_TYPE=Debug -DKRITA_DEVS=ON -DBUILD_TESTING=TRUE"
+    fi
+
+    displayHeader "Build Krita"
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    if [ "$ENVIRONMENT_NAME" == "" ]; then
+        # search for last started Environment
+        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastCreated GET)
+        fi
+
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            display "Can't find environment to start"
+            return 1
+        fi
+    fi
+
+    displayStep "Check name ($ENVIRONMENT_NAME)"
+
+    environmentCheckName $ENVIRONMENT_NAME
+    case "$?" in
+        3 | 4)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+            return 1
+            ;;
+    esac
+
+    displayOk
+
+    dockerContainerRun $ENVIRONMENT_NAME 1
+
+    dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildLogStart
+    dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC execTimeStart
+
+    if [ $OPT_CLEAN -eq 1 ]; then
+        displayStep "Clean before build"
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaClean $OPT_VERBOSE
+        if [ $? -ne 0 ]; then
+            displayKo
+            return 1
+        fi
+        if [ $OPT_BUILD_DEPS -eq 1 ]; then
+            dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaCleanDeps $OPT_VERBOSE
+            if [ $? -ne 0 ]; then
+                displayKo
+                return 1
+            fi
+        fi
+        displayOk
+    fi
+
+    if [ $OPT_CLEAN_SIP -eq 1 ] || [ $OPT_CLEAN -eq 1 ]; then
+        displayStep "Clean SIP"
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaCleanSip $OPT_VERBOSE
+        if [ $? -ne 0 ]; then
+            displayKo
+            return 1
+        fi
+        displayOk
+    fi
+
+    if [ $OPT_BUILD_DEPS -eq 1 ]; then
+        displayStep "Build dependencies"
+        if [ $OPT_VERBOSE -gt 1 ]; then
+            displayNfo ""
+        fi
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaBuildDeps $OPT_QT_DEBUG $OPT_QT_ASAN $OPT_VERBOSE
+        if [ $? -ne 0 ]; then
+            if [ $OPT_VERBOSE -eq 1 ]; then
+                displayKo
+            fi
+            return 1
+        elif [ $OPT_VERBOSE -eq 1 ]; then
+            displayOk
+        fi
+    fi
+
+    displayStep "Build Krita"
+    if [ $OPT_VERBOSE -gt 1 ]; then
+        displayNfo ""
+    fi
+
+    dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaBuild $OPT_JOBS $OPT_VERBOSE $KRITA_EXTRA_CMAKE_OPTIONS
+    if [ $? -ne 0 ]; then
+        if [ $OPT_VERBOSE -eq 1 ]; then
+            displayKo
+        fi
+        return 1
+    elif [ $OPT_VERBOSE -eq 1 ]; then
+        displayOk
+    fi
+
+    if [ $OPT_APPIMG -eq 1 ]; then
+        displayStep "Build AppImage"
+        if [ $OPT_VERBOSE -gt 1 ]; then
+            displayNfo ""
+        fi
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaBuildAppImage $OPT_JOBS $OPT_VERBOSE
+        if [ $? -ne 0 ]; then
+            if [ $OPT_VERBOSE -eq 1 ]; then
+                displayKo
+            fi
+            return 1
+        elif [ $OPT_VERBOSE -eq 1 ]; then
+            displayOk
+        fi
+    fi
+
+    if [ $OPT_TIME -eq 1 ]; then
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC execTimeGet
+    fi
+
+    if [ $OPT_RUN_KRITA -eq 1 ]; then
+        commandKrita commandKrita
+    fi
+
+    return $?
+}
+
+function commandKrita() {
+    COMMAND="$1"
+    shift
+
+    ARGS=$(checkArgs "$COMMAND" "has:" "help,appimage,scale:" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    OPT_APPIMG=0
+    OPT_SCALE=
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -a | --appimage)
+                OPT_APPIMG=1
+                ;;
+            -s | --scale)
+                shift
+                OPT_SCALE=$1
+                ;;
+            -v | --verbose)
+                OPT_VERBOSE=2
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    displayHeader "Start Krita"
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    if [ "$ENVIRONMENT_NAME" == "" ]; then
+        # search for last started Environment
+        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastCreated GET)
+        fi
+
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            display "Can't find environment to start"
+            return 1
+        fi
+    fi
+
+    displayStep "Check name ($ENVIRONMENT_NAME)"
+
+    environmentCheckName $ENVIRONMENT_NAME
+    case "$?" in
+        3 | 4)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+            return 1
+            ;;
+    esac
+
+    displayOk
+
+    if [ $OPT_APPIMG -eq 0 ]; then
+        displayStep "Start from environment built from"
+        displayNfo ""
+
+        GITNFO=$(dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildGitNfo)
+        IFS=$'\n'
+        for nfo in $GITNFO
+        do
+            displayNfo $nfo
+        done
+        displayNfo ""
+
+        dockerContainerIsRunning $ENVIRONMENT_NAME
+        if [ $? -eq 0 ]; then
+            dockerContainerRun $ENVIRONMENT_NAME 1
+        fi
+
+        OPT_KRITA=""
+        if [ "$OPT_SCALE" != "" ]; then
+            OPT_KRITA="--scale=$OPT_SCALE"
+        fi
+
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaExec "$OPT_KRITA"
+    else
+        if [ "$OPT_SCALE" != "" ]; then
+            export QT_SCALE_FACTOR=$OPT_SCALE
+        fi
+
+        displayStep "Start from appimage"
+        APPIMAGE_DIR="$(environmentPathName $ENVIRONMENT_NAME)/appimages"
+
+        APPIMAGE_BIN=$(ls -1 --sort=time $APPIMAGE_DIR/*.appimage 2>/dev/null | head -n 1)
+
+        if [[ "$APPIMAGE_BIN" == "" ]]; then
+            display "No appimage found!"
+        else
+            displayNfo ""
+            displayNfo "Found appimage"
+            displayNfo "  $APPIMAGE_BIN"
+            displayNfo "  $(stat --format '%w' $APPIMAGE_BIN)"
+            displayNfo ""
+            displayNfo "Built from"
+            displayNfo $(cat "$APPIMAGE_BIN.gitNfo")
+            displayNfo ""
+            $APPIMAGE_BIN
+        fi
+    fi
+
+    return $?
+}
+
+function commandLogs() {
+    COMMAND="$1"
+    shift
+
+    ARGS=$(checkArgs "$COMMAND" "hfto:" "help,full,time,open:" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    OPT_MODE=short
+    OPT_OPEN=cat
+    OPT_TIME=N
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -f | --full)
+                OPT_MODE=full
+                ;;
+            -t | --time)
+                OPT_TIME=Y
+                ;;
+            -o | --open)
+                shift
+                OPT_OPEN=$1
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    displayHeader "Show logs"
+
+    ENVIRONMENT_NAME=$1
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    if [ "$ENVIRONMENT_NAME" == "" ]; then
+        # search for last started Environment
+        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastCreated GET)
+        fi
+
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            display "Can't find environment to start"
+            return 1
+        fi
+    fi
+
+    displayStep "Check name ($ENVIRONMENT_NAME)"
+
+    environmentCheckName $ENVIRONMENT_NAME
+    case "$?" in
+        3 | 4)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+            return 1
+            ;;
+    esac
+
+    displayOk
+
+    dockerContainerIsRunning $ENVIRONMENT_NAME
+    if [ $? -eq 0 ]; then
+        dockerContainerRun $ENVIRONMENT_NAME 1
+    fi
+
+    displayStep "View log ($OPT_MODE)"
+
+    case "$OPT_OPEN" in
+        'cat')
+            displayNfo ""
+            dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildLogGet $OPT_MODE $OPT_TIME $OPT_OPEN
+            ;;
+        'emacs' | 'mcedit' | 'nano'  | 'vi' | 'vim')
+            displayNfo "start $OPT_OPEN"
+            dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildLogGet $OPT_MODE $OPT_TIME $OPT_OPEN
+            ;;
+        *)
+            display "unknown editor"
+            ;;
+    esac
+
+    return $?
+}
+
+function commandTool() {
+    COMMAND="$1"
+    shift
+
+    ARGS=$(checkArgs "$COMMAND" "hr" "help,root" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    eval set -- "$ARGS"
+
+    OPT_ROOT=N
+    TLS_NAME=bash
+
+    while true; do
+        case "$1" in
+            -h | --help)
+                commandHelp $COMMAND
+                return $?
+                ;;
+            -r | --root)
+                OPT_ROOT=Y
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    displayHeader "Execute tool"
+
+    case "$1" in
+        'bash' | 'mc' | 'htop')
+            # environment ommited, only tool is provided
+            ENVIRONMENT_NAME=
+            ;;
+        *)
+            ENVIRONMENT_NAME=$1
+            shift
+            ;;
+    esac
+
+    source ${CINCDIR}/environments.inc
+    source ${CINCDIR}/docker.inc
+
+    if [ "$ENVIRONMENT_NAME" == "" ]; then
+        # search for last started Environment
+        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastCreated GET)
+        fi
+
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            display "Can't find environment to start"
+            return 1
+        fi
+    fi
+
+    displayStep "Check name ($ENVIRONMENT_NAME)"
+
+    environmentCheckName $ENVIRONMENT_NAME
+    case "$?" in
+        3 | 4)
+            displayKo
+            displayNfo "Environment name '$ENVIRONMENT_NAME' not found"
+            return 1
+            ;;
+    esac
+
+    displayOk
+
+    dockerContainerIsRunning $ENVIRONMENT_NAME
+    if [ $? -eq 0 ]; then
+        dockerContainerRun $ENVIRONMENT_NAME 1
+    fi
+
+    if [ "$1" != "" ]; then
+        TLS_NAME=$1
+    fi
+
+    case "$TLS_NAME" in
+        'bash' | 'mc' | 'htop')
+            if [ "$OPT_ROOT" == "Y" ]; then
+                displayStep "Execute $TLS_NAME (as root)"
+                display
+                dockerContainerExec -ti -u root $ENVIRONMENT_NAME $TLS_NAME
+            else
+                displayStep "Execute $TLS_NAME"
+                display
+                dockerContainerExec -ti $ENVIRONMENT_NAME $TLS_NAME
+            fi
+            ;;
+        *)
+            display "Unknown tool ($TLS_NAME)"
+            ;;
+    esac
+
+    return $?
+}
+
+case "$1" in
+    new)
+        commandNew "$@"
+        exit $?
+        ;;
+    remove)
+        commandRemove "$@"
+        exit $?
+        ;;
+    rename)
+        commandRename "$@"
+        exit $?
+        ;;
+    list)
+        commandList "$@"
+        exit $?
+        ;;
+    start)
+        commandStart "$@"
+        exit $?
+        ;;
+    stop)
+        commandStop "$@"
+        exit $?
+        ;;
+    build)
+        commandBuild "$@"
+        exit $?
+        ;;
+    krita)
+        commandKrita "$@"
+        exit $?
+        ;;
+    logs)
+        commandLogs "$@"
+        exit $?
+        ;;
+    tool)
+        commandTool "$@"
+        exit $?
+        ;;
+esac
+
+commandNone $@
+exit $?
+

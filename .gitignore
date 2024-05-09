@@ -1,0 +1,9 @@
+persistent
+.container_name
+.srcref
+.spawn_clone.lock
+clones
+
+environments/*
+--tmp*/
+data/.last-*

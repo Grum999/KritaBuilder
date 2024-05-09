@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# provided dby $@
+#   -DCMAKE_BUILD_TYPE=Release|Debug
+#   -DKRITA_DEVS=OFF|ON
+#   -DBUILD_TESTING=FALSE|TRUE
+#   -DKRITA_ENABLE_PCH=0|1
+#   -DBUILD_TESTING=0|1
+
+cmake -DCMAKE_INSTALL_PREFIX=$KRITADIR \
+      -DHIDE_SAFE_ASSERTS=FALSE \
+      -DPYQT_SIP_DIR_OVERRIDE=$KRITA_WS_PATH/deps/usr/share/sip \
+      $@
+

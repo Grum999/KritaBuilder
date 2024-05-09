@@ -1,0 +1,44 @@
+prepend() { [ -d "$2" ] && eval $1=\"$2\$\{$1:+':'\$$1\}\" && export $1 ; }
+
+
+export USER_HOME=/home/appimage
+export KRITA_BUILD_PATH=$USER_HOME/build
+export KRITA_WS_PATH=$KRITA_BUILD_PATH/appimage-workspace
+export KRITA_SRC_PATH=$KRITA_BUILD_PATH/src/krita
+export KRITA_APPIMG_PATH=$KRITA_BUILD_PATH/appimages
+
+
+export KRITADIR=$KRITA_WS_PATH/krita.appdir/usr
+export DEPSDIR=$KRITA_WS_PATH/deps/usr
+export QML2_IMPORT_PATH=$KRITADIR/lib/x86_64-linux-gnu/qml
+
+
+prepend PATH $KRITADIR/bin
+prepend LD_LIBRARY_PATH $KRITADIR/lib64
+prepend LD_LIBRARY_PATH $KRITADIR/lib
+#prepend XDG_DATA_DIRS $KRITADIR/share
+prepend PKG_CONFIG_PATH $KRITADIR/lib64/pkgconfig
+prepend PKG_CONFIG_PATH $KRITADIR/lib/pkgconfig
+
+prepend PATH $DEPSDIR/bin
+prepend LD_LIBRARY_PATH $DEPSDIR/lib64
+prepend LD_LIBRARY_PATH $DEPSDIR/lib
+prepend LD_LIBRARY_PATH $DEPSDIR/lib/x86_64-linux-gnu
+#prepend XDG_DATA_DIRS $DEPSDIR/share
+prepend PKG_CONFIG_PATH $DEPSDIR/lib64/pkgconfig
+prepend PKG_CONFIG_PATH $DEPSDIR/lib/pkgconfig
+
+prepend CMAKE_PREFIX_PATH $DEPSDIR
+
+prepend PYTHONPATH $DEPSDIR/sip
+
+prepend PATH ~/tools/bin
+prepend PATH ~/bin
+
+prepend EXTERNALS_DOWNLOAD_DIR=$USRHOME/build/src/downloads
+mkdir -p $USRHOME/build/src/downloads
+
+# Disable leak checks in case ASAN is used.
+# It takes a lot of time to finalize the leaks 
+# and we usually just check for invalid access
+export ASAN_OPTIONS=detect_leaks=0
