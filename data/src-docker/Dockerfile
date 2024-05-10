@@ -1,5 +1,8 @@
 FROM invent-registry.kde.org/sysadmin/ci-images/krita-appimage-builder AS base_image
 
+ARG APPIMAGE_UID=1000
+ARG APPIMAGE_GID=1000
+
 USER root
 
 #RUN echo 'root:root' | chpasswd
@@ -14,6 +17,7 @@ RUN apt-get -y install curl \
                        mesa-utils \
                        time \
                        mc \
+                       htop \
                        cpu-checker # for kvm-ok command
 
 RUN update-alternatives --set gcc /usr/bin/gcc-11
@@ -25,6 +29,9 @@ ENV KRITA_SRC_PATH=${USER_HOME}/build/src/krita
 ENV KRITA_APPIMG_PATH=${USER_HOME}/build/appimages
 
 RUN chsh -s /bin/bash appimage
+
+RUN groupmod -g ${APPIMAGE_GID} appimage
+RUN usermod -u ${APPIMAGE_UID} -g ${APPIMAGE_GID} appimage
 
 RUN locale-gen en_US.UTF-8
 

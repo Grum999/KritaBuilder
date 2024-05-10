@@ -313,7 +313,6 @@ function commandHelp() {
     return 0
 }
 
-
 function commandNone() {
     ARGS=$(checkArgs " " "hv" "help,version" "$@") || exit $?
     eval set -- "$ARGS"

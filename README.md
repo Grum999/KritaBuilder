@@ -11,6 +11,14 @@ First, ensure you have *Docker* and *git* installed.
 > sudo apt install git docker docker.io
 > ```
 
+Eventually, change docker settings `/etc/docker/daemon.json` to define where dockers are stored.
+```json
+{
+    "data-root" : "/home/xxxx/docker"
+}
+```
+
+
 ## Installation
 
 To install the *KritaBuilder*, you just need to clone repository:
@@ -83,29 +91,29 @@ All files (source code, binaries, ...) are NOT stored in the docker but in *Krit
 
 | Directory | Description |
 | --- | --- |
-| `.docker-config` | Is the `~/.config` directory of your docker; it allows you to keep persistent data setup even if Docker is stopped |
+| `.docker-config` | Is the `~/.config` directory of your docker<br>It allows to keep persistent data setup even if Docker is stopped |
 | `appimages` | Is the place where appimages are built |
-| `data` | Is the `~/data` directory of your docker; this allows you to access to persistent data from/to the docker (get access from your computer to `.kra` files saved in `~/data` for example) |
+| `data` | Is the `~/data` directory of your docker<br>It allows you to access to persistent data from/to the docker (get access from your computer to `.kra` files saved in `~/data` for example) |
 | `sources` | Is the place where *Krita* repsitory will be cloned (if not provided) and dependencies sources will be downloaded |
 | `workspaces` |Is the place where *Krita* build files will be produced |
 
 ### Start and Stop environments
 
-The command **start** will start docker for designed build environment, the **stop** command will stop the docker.
+The command **`start`** will start docker for designed build environment, the **stop** command will stop the docker.
 
 > Note: any command that need a *running* docker will automativally start docker if needed.
 
 ### List environments
 
-The command **list** will provide a list of available environments, and according to options the status and some informations about usage.
+The command **`list`** will provide a list of available environments, and according to options the status and some informations about usage.
 
 ### Rename environments
 
-The command **rename** will let you rename an environment if initial defined name need to be changed.
+The command **`rename`** will let you rename an environment if initial defined name need to be changed.
 
 ### Remove environments
 
-The command **remove** will delete everything related to an environment:
+The command **`remove`** will delete everything related to an environment:
 - Directories
 - Docker
 
@@ -123,7 +131,7 @@ The command **build** will start a new Krita's build from defined source reposit
 
 ## Running Krita
 
-The command **krita** will execute *Krita* from last built binaries.
+The command **`krita`** will execute *Krita* from last built binaries.
 
 Execution is made from the docker.
 
@@ -132,12 +140,12 @@ Execution is made from the docker.
 
 ## Check logs
 
-The command **logs** let you the ability to show logs produced from the last build execution.
+The command **`logs`** let you the ability to show logs produced from the last build execution.
 
 - Use `--full` option to get complete logs
 
 ## Tools
 
-The command **tools** let you the ability to enter into docker (interactive bash session).
+The command **`tools`** let you the ability to enter into docker (interactive bash session).
 
 

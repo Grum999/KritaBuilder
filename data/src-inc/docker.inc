@@ -48,7 +48,11 @@ function dockerImageCreate() {
         displayNfo ""
     fi
 
-    ${DOCKER_BINARY} image build $OPT_NO_CACHE $OPT_QUIET -t $ENV_NAME $CDCKDIR 1>&$REDIRECT
+    ${DOCKER_BINARY} image build $OPT_NO_CACHE $OPT_QUIET \
+                                 -t $ENV_NAME \
+                                 --build-arg APPIMAGE_UID=$(id -u) \
+                                 --build-arg APPIMAGE_GID=$(id -g) \
+                                 $CDCKDIR 1>&$REDIRECT
 
     if [ $? -ne 0 ]; then
         if [ $OPT_VERBOSE -eq 1 ]; then
@@ -191,8 +195,15 @@ function dockerContainerRun() {
     local REDIRECT=1
     local NVIDIA_OPTS=
     local OPT_QUIET=
+    local OPT_KVM=
 
     source $CFG_FILE
+
+
+    if [[ -e /dev/kvm ]]; then
+        OPT_KVM+="--device /dev/kvm"
+    fi
+
 
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/data:$APPIMG_USER_HOME/data:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/appimages:$APPIMG_KRITA_APPIMG_PATH:rw"
@@ -262,6 +273,7 @@ function dockerContainerRun() {
     --device /dev/dri \
     $NVIDIA_OPTS \
     $DOCKER_ENV \
+    $OPT_KVM \
     --name $ENV_NAME \
     $ENV_NAME 1>&$REDIRECT
 
