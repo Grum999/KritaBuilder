@@ -47,6 +47,7 @@ RUN mkdir -p $KRITA_WS_PATH/krita.appdir/usr && \
     mkdir -p $KRITA_APPIMG_PATH && \
     mkdir -p $USRHOME/build/src/downloads && \
     mkdir -p $USRHOME/.config && \
+    mkdir -p $USRHOME/.config/gdb && \
     mkdir -p $USRHOME/bin && \
     mkdir -p $USRHOME/data
 
@@ -57,6 +58,10 @@ COPY ./home/.bash_devenv \
 COPY ./bin/krita-cmd.sh \
      ./bin/run_cmake.sh \
      $USRHOME/bin/
+
+COPY ./home/debug-short.gdb \
+     ./home/debug-interactive.gdb \
+     $USRHOME/.config/gdb/
 
 RUN chown -R appimage:appimage $USRHOME
 RUN chmod a+rwx /tmp

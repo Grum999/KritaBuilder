@@ -9,6 +9,7 @@ export KRITA_APPIMG_PATH=$KRITA_BUILD_PATH/appimages
 
 
 export KRITADIR=$KRITA_WS_PATH/krita.appdir/usr
+export KRITADIR_BIN=$KRITADIR/bin/krita
 export DEPSDIR=$KRITA_WS_PATH/deps/usr
 export QML2_IMPORT_PATH=$KRITADIR/lib/x86_64-linux-gnu/qml
 

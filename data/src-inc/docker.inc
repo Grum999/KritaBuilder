@@ -204,11 +204,14 @@ function dockerContainerRun() {
         OPT_KVM+="--device /dev/kvm"
     fi
 
-
-    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/data:$APPIMG_USER_HOME/data:rw"
+    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/data-env:$APPIMG_USER_HOME/data-env:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/appimages:$APPIMG_KRITA_APPIMG_PATH:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-config/mc:$APPIMG_USER_HOME/.config/mc:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-config/htop:$APPIMG_USER_HOME/.config/htop:rw"
+
+    if [ "$DATA_PATH" != "" ]; then
+        DOCKER_MOUNTS="$DOCKER_MOUNTS -v $DATA_PATH:$APPIMG_USER_HOME/data:rw"
+    fi
 
     if [[ -d $ENV_PATH/sources/downloads ]]; then
         DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/sources/downloads:$APPIMG_KRITA_WS_PATH/downloads:rw"
@@ -465,5 +468,4 @@ function dockerContainerExec() {
     # execute a command on a container
     #
     ${DOCKER_BINARY} container exec $@
-
 }
