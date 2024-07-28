@@ -1,9 +1,15 @@
 #!/bin/bash
 
+# -----------------------------------------------------------------------------
+# Krita Builder
+# Copyright (C) 2024 - Grum999
+# -----------------------------------------------------------------------------
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
-#
-#
-#
+# https://spdx.org/licenses/GPL-3.0-or-later.html
+# -----------------------------------------------------------------------------
+# A tool used to build Krita
+# -----------------------------------------------------------------------------
 
 # KBuilder Version
 KBUILDER_NAME=KBuilder
@@ -310,7 +316,7 @@ function commandHelp() {
 
     Given TOOL can be:
     - bash                          Enter in shell; default tool if none is specified
-    - mc                            Execue Midnight Commander
+    - mc                            Execute Midnight Commander
     - htop                          Execute htop
     - gdb                           Execute gdb in interactive mode (run command will start Krita)
     - callgrind-on                  When Krita is executed with debugger callgrind, allows to start analysis
