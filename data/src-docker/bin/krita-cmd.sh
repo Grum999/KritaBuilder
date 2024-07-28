@@ -7,6 +7,7 @@ BUILDLOG_FILE=$KRITA_BUILD_PATH/.buildlog
 OUTLOG_FILE=$KRITA_BUILD_PATH/.outlog
 GETLOG_FILE=/tmp/getlog
 GITNFO_FILE=$KRITA_BUILD_PATH/.gitnfo
+DEBUGLOG_FILE=$KRITA_BUILD_PATH/.debug-output
 
 function gitNfo() {
     GITNFO=$(git -C $KRITA_SRC_PATH log --format="$1: %D%n            %h -- %ai%n            %s" HEAD^..HEAD)
@@ -31,19 +32,23 @@ function buildLogStart() {
 function buildLogGet() {
     local MODE=$1
     local TIME=$2
-    local VIEW=$3
+    local DEBUG=$3
+    local VIEW=$4
 
-    if [ "$MODE" == 'short' ]; then
-        cat $BUILDLOG_FILE > $GETLOG_FILE
+    if [ "$DEBUG" == "Y" ]; then
+        cat $DEBUGLOG_FILE > $GETLOG_FILE
     else
-        cat $OUTLOG_FILE > $GETLOG_FILE
-    fi
+        if [ "$MODE" == 'short' ]; then
+            cat $BUILDLOG_FILE > $GETLOG_FILE
+        else
+            cat $OUTLOG_FILE > $GETLOG_FILE
+        fi
 
-    if [ "$TIME" == 'Y' ]; then
-        echo "" >> $GETLOG_FILE
-        echo "--- Execution time" >> $GETLOG_FILE
-        echo "" >> $GETLOG_FILE
-        cat $EXECTIME_FILE >> $GETLOG_FILE
+        if [ "$TIME" == 'Y' ]; then
+            echo "" >> $GETLOG_FILE
+            echo "--- Execution time" >> $GETLOG_FILE
+            echo "" >> $GETLOG_FILE
+        fi
     fi
 
     if [ "$VIEW" == "cat" ]; then
@@ -262,14 +267,36 @@ function kritaBuildAppImage() {
 }
 
 function kritaExec() {
-    ARGS=$(getopt -o "s:" -l "scale:" -- "$@")
+    ARGS=$(getopt -o "s:d:" -l "scale:,debug:" -- "$@")
     eval set -- "$ARGS"
+
+    EXEC=
+
+    # cleanup any debug log file, if exists
+    rm -f $DEBUGLOG_FILE
 
     while true; do
         case "$1" in
-            --scale-factor)
+            -s | --scale)
                 shift
                 export QT_SCALE_FACTOR=$1
+                echo ".. Applying scale factor: $1"
+                ;;
+            -d | --debug)
+                shift
+                DEBUGGER=$1
+
+                if [ $DEBUGGER == "gdb" ]; then
+                    echo ".. Execute debug: gdb (debug-short.gdb)"
+                    EXEC="gdb --command=~/.config/gdb/debug-short.gdb $KRITADIR_BIN"
+                elif [ $DEBUGGER == "valgrind" ]; then
+                    echo ".. Execute debug: valgrind"
+                    EXEC="valgrind --log-file=$DEBUGLOG_FILE $KRITADIR_BIN"
+                elif [ $DEBUGGER == "callgrind" ]; then
+                    echo ".. Execute debug: callgrind"
+                    EXEC="valgrind --tool=callgrind --callgrind-out-file=$DEBUGLOG_FILE $KRITADIR_BIN"
+                fi
+                break
                 ;;
             --)
                 shift
@@ -278,8 +305,51 @@ function kritaExec() {
         esac
         shift
     done
-    krita $@
+
+    if [ "$EXEC" == "" ]; then
+        EXEC="krita"
+    fi
+    $EXEC
 }
+
+function gdbExec() {
+    # cleanup any debug log file, if exists
+    rm -f $DEBUGLOG_FILE
+
+    gdb --command=~/.config/gdb/debug-interactive.gdb $KRITADIR_BIN
+}
+
+function callgrindExec() {
+    ARGS=$(getopt -l "start,stop" -- "$@")
+    eval set -- "$ARGS"
+
+    CMD_OPTION=
+
+    while true; do
+        case "$1" in
+            --start)
+                shift
+                CMD_OPTION="--instr=on"
+                ;;
+            --stop)
+                shift
+                CMD_OPTION="--instr=off"
+                ;;
+            --)
+                shift
+                break
+                ;;
+        esac
+        shift
+    done
+
+    if [ "CMD_OPTION" == "" ]; then
+        return
+    fi
+
+    callgrind_control $CMD_OPTION
+}
+
 
 
 case "$1" in
@@ -338,6 +408,16 @@ case "$1" in
     kritaExec)
         shift
         kritaExec $@
+        exit $?
+        ;;
+    gdbExec)
+        shift
+        gdbExec $@
+        exit $?
+        ;;
+    callgrindExec)
+        shift
+        callgrindExec $@
         exit $?
         ;;
 esac

@@ -96,6 +96,7 @@ function environmentCreate() {
     # create environment
     # $1 = name
     # $2 = source path/url
+    # $3 = data path
     #
     # - create directories
     # - create defaults files
@@ -104,12 +105,13 @@ function environmentCreate() {
     local OPT_QUIET=
     local ENV_NAME=$1
     local KRITA_SRC=$2
+    local DATA_PATH=$3
     local ENV_PATH="$(environmentPathName $ENV_NAME)"
     local CFG_FILE="$(environmentConfigFile $ENV_NAME)"
     local DIRECTORIES=("$ENV_PATH/appimages"
                        "$ENV_PATH/sources/downloads"
                        "$ENV_PATH/sources/krita"
-                       "$ENV_PATH/data"
+                       "$ENV_PATH/data-env"
                        "$ENV_PATH/workspace/deps/usr"
                        "$ENV_PATH/workspace/krita.appdir/usr"
                        "$ENV_PATH/workspace/krita-build"
@@ -126,6 +128,7 @@ function environmentCreate() {
 
     # -- create default files
     echo "KRITA_SRC=$KRITA_SRC" > $CFG_FILE
+    echo "DATA_PATH=$DATA_PATH" >> $CFG_FILE
     echo "QT_SCALE_FACTOR=1.0" >> $CFG_FILE
 
     if [[ "$KRITA_SRC" =~ ^https?:// ]]; then

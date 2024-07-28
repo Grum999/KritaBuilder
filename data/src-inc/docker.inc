@@ -48,7 +48,11 @@ function dockerImageCreate() {
         displayNfo ""
     fi
 
-    ${DOCKER_BINARY} image build $OPT_NO_CACHE $OPT_QUIET -t $ENV_NAME $CDCKDIR 1>&$REDIRECT
+    ${DOCKER_BINARY} image build $OPT_NO_CACHE $OPT_QUIET \
+                                 -t $ENV_NAME \
+                                 --build-arg APPIMAGE_UID=$(id -u) \
+                                 --build-arg APPIMAGE_GID=$(id -g) \
+                                 $CDCKDIR 1>&$REDIRECT
 
     if [ $? -ne 0 ]; then
         if [ $OPT_VERBOSE -eq 1 ]; then
@@ -191,13 +195,23 @@ function dockerContainerRun() {
     local REDIRECT=1
     local NVIDIA_OPTS=
     local OPT_QUIET=
+    local OPT_KVM=
 
     source $CFG_FILE
 
-    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/data:$APPIMG_USER_HOME/data:rw"
+
+    if [[ -e /dev/kvm ]]; then
+        OPT_KVM+="--device /dev/kvm"
+    fi
+
+    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/data-env:$APPIMG_USER_HOME/data-env:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/appimages:$APPIMG_KRITA_APPIMG_PATH:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-config/mc:$APPIMG_USER_HOME/.config/mc:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-config/htop:$APPIMG_USER_HOME/.config/htop:rw"
+
+    if [ "$DATA_PATH" != "" ]; then
+        DOCKER_MOUNTS="$DOCKER_MOUNTS -v $DATA_PATH:$APPIMG_USER_HOME/data:rw"
+    fi
 
     if [[ -d $ENV_PATH/sources/downloads ]]; then
         DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/sources/downloads:$APPIMG_KRITA_WS_PATH/downloads:rw"
@@ -262,6 +276,7 @@ function dockerContainerRun() {
     --device /dev/dri \
     $NVIDIA_OPTS \
     $DOCKER_ENV \
+    $OPT_KVM \
     --name $ENV_NAME \
     $ENV_NAME 1>&$REDIRECT
 
@@ -453,5 +468,4 @@ function dockerContainerExec() {
     # execute a command on a container
     #
     ${DOCKER_BINARY} container exec $@
-
 }
