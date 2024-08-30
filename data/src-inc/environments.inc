@@ -106,6 +106,7 @@ function environmentCreate() {
     local ENV_NAME=$1
     local KRITA_SRC=$2
     local DATA_PATH=$3
+    local KBUILDER_VERSION=$4
     local ENV_PATH="$(environmentPathName $ENV_NAME)"
     local CFG_FILE="$(environmentConfigFile $ENV_NAME)"
     local DIRECTORIES=("$ENV_PATH/appimages"
@@ -130,6 +131,9 @@ function environmentCreate() {
     echo "KRITA_SRC=$KRITA_SRC" > $CFG_FILE
     echo "DATA_PATH=$DATA_PATH" >> $CFG_FILE
     echo "QT_SCALE_FACTOR=1.0" >> $CFG_FILE
+    echo "BUILD_KBUILDER=$KBUILDER_VERSION" >> $CFG_FILE
+    echo "BUILD_DATE=$(date +'%Y-%m-%d')" >> $CFG_FILE
+    echo "BUILD_TIME=$(date +'%H:%M:%S')" >> $CFG_FILE
 
     if [[ "$KRITA_SRC" =~ ^https?:// ]]; then
         displayStep "Clone remote Krita git repository"

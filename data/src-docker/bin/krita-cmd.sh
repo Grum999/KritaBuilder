@@ -9,7 +9,7 @@ GETLOG_FILE=/tmp/getlog
 GITNFO_FILE=$KRITA_BUILD_PATH/.gitnfo
 DEBUGLOG_FILE=$KRITA_BUILD_PATH/.debug-output
 
-function gitNfo() {
+function buildGitNfo() {
     GITNFO=$(git -C $KRITA_SRC_PATH log --format="$1: %D%n            %h -- %ai%n            %s" HEAD^..HEAD)
     IFS=$'\n'
     for nfo in $GITNFO
@@ -18,9 +18,6 @@ function gitNfo() {
     done
 
     git -C $KRITA_SRC_PATH log --format="%D%n%h -- %ai%n%s" HEAD^..HEAD > $GITNFO_FILE
-}
-
-function buildGitNfo() {
     cat $GITNFO_FILE
 }
 
@@ -83,9 +80,6 @@ function execTime() {
     shift
 
     case "$STEP_ID" in
-        kritaBuildDeps)
-            STEP_NAME="Build dependencies"
-            ;;
         kritaBuild)
             STEP_NAME="Build Krita"
             ;;
@@ -140,8 +134,8 @@ function kritaCleanSip() {
     fi
 }
 
-function kritaCleanDeps() {
-    # clean dependencies
+function kritaInstallDeps() {
+    # install dependencies
     # $1 = option verbose
     local REDIRECT=1
     local OPT_VERBOSE=$1
@@ -150,38 +144,41 @@ function kritaCleanDeps() {
         REDIRECT=/dev/null
     fi
 
+    buildLog "kritaInstallDeps"
+
+    buildLog "kritaInstallDeps KRITA_WS_PATH=$KRITA_WS_PATH"
+    buildLog "kritaInstallDeps KRITA_SRC_PATH=$KRITA_SRC_PATH"
+
     if [[ -d $KRITA_WS_PATH/deps ]]; then
-        rm -rfd $KRITA_WS_PATH/deps 1>&$REDIRECT || exit 1
+        rm -rfd $KRITA_WS_PATH/deps/* 1>&$REDIRECT || exit 1
     fi
+
     if [[ -d $KRITA_WS_PATH/deps-build ]]; then
-        rm -rfd $KRITA_WS_PATH/deps-build 1>&$REDIRECT || exit 1
-    fi
-}
-
-function kritaBuildDeps() {
-    # build dependencies
-    # $1 = QT_ENABLE_DEBUG_INFO
-    # $2 = QT_ENABLE_ASAN
-    # $3 = option verbose
-    local REDIRECT=1
-    local OPT_VERBOSE=$3
-
-    if [ $OPT_VERBOSE -le 1 ]; then
-        REDIRECT=/dev/null
+        rm -rfd $KRITA_WS_PATH/deps-build/* 1>&$REDIRECT || exit 1
     fi
 
-    buildLog "kritaBuildDeps"
+    if [[ -d $KRITA_WS_PATH/krita-deps-management ]]; then
+        rm -rfd $KRITA_WS_PATH/krita-deps-management 1>&$REDIRECT || exit 1
+    fi
 
-    QT_ENABLE_DEBUG_INFO=$1
-    QT_ENABLE_ASAN=$2
+    cd $KRITA_WS_PATH/deps
 
-    buildLog "kritaBuildDeps: QT_ENABLE_DEBUG_INFO=$QT_ENABLE_DEBUG_INFO"
-    buildLog "kritaBuildDeps: QT_ENABLE_ASAN=$QT_ENABLE_ASAN"
-    buildLog "kritaBuildDeps: KRITA_WS_PATH=$KRITA_WS_PATH"
-    buildLog "kritaBuildDeps: KRITA_SRC_PATH=$KRITA_SRC_PATH"
+    buildLog "kritaInstallDeps: clone krita-deps-management"
+    git clone https://invent.kde.org/dkazakov/krita-deps-management.git 1>&$REDIRECT || exit 1
 
-    cd $KRITA_WS_PATH
-    execTime kritaBuildDeps $KRITA_SRC_PATH/packaging/linux/appimage/build-deps.sh $KRITA_WS_PATH $KRITA_SRC_PATH 1>&$REDIRECT || exit 1
+    buildLog "kritaInstallDeps: clone ci-utilities"
+    git clone https://invent.kde.org/dkazakov/ci-utilities.git krita-deps-management/ci-utilities 1>&$REDIRECT || exit 1
+
+    buildLog "kritaInstallDeps: initialize Python virtual environment"
+    python3 -m venv PythonEnv 1>&$REDIRECT || exit 1
+    source $KRITA_WS_PATH/deps/PythonEnv/bin/activate 1>&$REDIRECT || exit 1
+    python3 -m pip install -r krita-deps-management/requirements.txt 1>&$REDIRECT || exit 1
+
+    buildLog "kritaInstallDeps: download & install dependencies"
+    python3 krita-deps-management/tools/setup-env.py --full-krita-env -v PythonEnv 1>&$REDIRECT || exit 1
+
+    buildLog "kritaInstallDeps: update deps/usr"
+    mv $KRITA_WS_PATH/deps/_install/ $KRITA_WS_PATH/deps/usr/
 }
 
 function kritaBuild() {
@@ -204,7 +201,6 @@ function kritaBuild() {
     buildLog "kritaBuild"
 
     buildLog "kritaBuild: KRITA_SRC_PATH=$KRITA_SRC_PATH"
-    gitNfo "kritaBuild"
 
     cd $KRITA_WS_PATH/krita-build
     if [[ ! -f CMakeCache.txt ]]; then
@@ -242,7 +238,6 @@ function kritaBuildAppImage() {
 
     buildLog "kritaBuildAppImage: KRITA_WS_PATH=$KRITA_WS_PATH"
     buildLog "kritaBuildAppImage: KRITA_SRC_PATH=$KRITA_SRC_PATH"
-    gitNfo "kritaBuildAppImage"
 
     buildLog "kritaBuildAppImage: build"
     cd $KRITA_WS_PATH
@@ -385,14 +380,9 @@ case "$1" in
         kritaCleanSip $@
         exit $?
         ;;
-    kritaCleanDeps)
+    kritaInstallDeps)
         shift
-        kritaCleanDeps $@
-        exit $?
-        ;;
-    kritaBuildDeps)
-        shift
-        kritaBuildDeps $@
+        kritaInstallDeps $@
         exit $?
         ;;
     kritaBuild)

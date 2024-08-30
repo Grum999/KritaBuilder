@@ -375,6 +375,51 @@ function dockerContainerStop {
     return 0
 }
 
+function dockerContainerStart {
+    # start docker container for environment
+    #
+    # $1 environment name=image name
+    # $2 set to 1 to display env name
+    local ENV_NAME=$1
+    local ENV_NAME_DISPLAY=$2
+    local REDIRECT=1
+
+    if [ "$ENV_NAME_DISPLAY" == "1" ]; then
+        displayStep "Start docker container ($ENV_NAME)"
+    else
+        displayStep "Start docker container"
+    fi
+
+    dockerContainerIsRunning $ENV_NAME
+    if [ $? -eq 1 ]; then
+        display "N/A (already running)"
+        return 0
+    fi
+
+    CONTAINER_ID=$(${DOCKER_BINARY} container ls --filter name=^$ENV_NAME$ --filter status=exited -q -a)
+
+    if [[ "$CONTAINER_ID" != "" ]]; then
+        if [ $OPT_VERBOSE -le 1 ]; then
+            REDIRECT=/dev/null
+        else
+            displayNfo ""
+        fi
+
+        ${DOCKER_BINARY} container start $CONTAINER_ID 1>&$REDIRECT
+
+        if [ $? -ne 0 ]; then
+            if [ $OPT_VERBOSE -eq 1 ]; then
+                displayKo
+            fi
+            return 1
+        elif [ $OPT_VERBOSE -eq 1 ]; then
+            displayOk
+        fi
+    fi
+
+    return 0
+}
+
 function dockerContainerCreatePulseaudioSocket {
     local REDIRECT=1
 

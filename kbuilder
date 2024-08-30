@@ -13,7 +13,7 @@
 
 # KBuilder Version
 KBUILDER_NAME=KBuilder
-KBUILDER_VERSION=1.1.0
+KBUILDER_VERSION=1.2.0
 
 # current directory
 CDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -265,8 +265,6 @@ function commandHelp() {
                 --no-debug          Disable all debug options
                 --no-tests          Disable building of tests
                 --pch               Enable the usage of PCH headers (require huge amount of space on disk)
-                --qt-asan           Enable address sanitizer for Qt (implies --qt-debug)
-                --qt-debug          Enable debugging info for Qt
 
   If NAME is not provided, build will be executed on last environment on which a build has been made
   "
@@ -480,13 +478,21 @@ function commandNew() {
         displayOk
     fi
 
-    environmentCreate $ENVIRONMENT_NAME $OPT_SOURCE_PATH $OPT_DATA_PATH || exit 1
+    environmentCreate $ENVIRONMENT_NAME $OPT_SOURCE_PATH $OPT_DATA_PATH $KBUILDER_VERSION || exit 1
     dockerImageCreate $ENVIRONMENT_NAME $OPT_NO_CACHE || exit 1
     dockerContainerRun $ENVIRONMENT_NAME || exit 1
     environmentLastStarted ADD $ENVIRONMENT_NAME
 
+    displayStep "Install dependencies"
+    dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaInstallDeps $OPT_VERBOSE
+    if [ $? -ne 0 ]; then
+        displayKo
+        return 1
+    fi
+    displayOk
+
     if [ $OPT_NO_BUILD -eq 0 ]; then
-        commandBuild commandBuild --deps
+        commandBuild commandBuild
     fi
 
     return $?
@@ -890,7 +896,7 @@ function commandStart() {
     fi
 
     for ENV_NAME in ${ENV_LIST[@]}; do
-        dockerContainerRun $ENV_NAME 1 $OPT_RESTART
+        dockerContainerStart $ENV_NAME 1 $OPT_RESTART
         environmentLastStarted ADD $ENV_NAME
     done
 
@@ -975,7 +981,7 @@ function commandBuild() {
     COMMAND="$1"
     shift
 
-    ARGS=$(checkArgs "$COMMAND" "hacsj:rdvt" "help,appimage,clean,clean-sip,jobs:,run,pch,no-tests,deps,krita-asan,qt-asan,qt-debug,verbose,time,no-debug" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    ARGS=$(checkArgs "$COMMAND" "hacsj:rdvt" "help,appimage,clean,clean-sip,jobs:,run,pch,no-tests,deps,krita-asan,verbose,time,no-debug" "$(getDefaultArgs $COMMAND) $@") || exit $?
     eval set -- "$ARGS"
 
     OPT_APPIMG=0
@@ -984,8 +990,6 @@ function commandBuild() {
     OPT_RUN_KRITA=0
     OPT_JOBS=$(nproc)
     OPT_BUILD_DEPS=0
-    OPT_QT_DEBUG=0
-    OPT_QT_ASAN=0
     OPT_ENABLE_PCH=0
     OPT_ENABLE_TESTS=1
     OPT_ENABLE_DEBUG=1
@@ -1004,9 +1008,14 @@ function commandBuild() {
                 ;;
             -c | --clean)
                 OPT_CLEAN=1
+                # clean implies clean-sip
+                OPT_CLEAN_SIP=1
                 ;;
             -d | --deps)
                 OPT_BUILD_DEPS=1
+                # updating dependencies implies to clean and rebuild krita
+                OPT_CLEAN=1
+                OPT_CLEAN_SIP=1
                 ;;
             -s | --clean-sip)
                 OPT_CLEAN_SIP=1
@@ -1035,12 +1044,6 @@ function commandBuild() {
                 ;;
             --pch)
                 OPT_ENABLE_PCH=1
-                ;;
-            --qt-asan)
-                OPT_QT_ASAN=1
-                ;;
-            --qt-debug)
-                OPT_QT_DEBUG=1
                 ;;
             --)
                 shift
@@ -1103,18 +1106,11 @@ function commandBuild() {
             displayKo
             return 1
         fi
-        if [ $OPT_BUILD_DEPS -eq 1 ]; then
-            dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaCleanDeps $OPT_VERBOSE
-            if [ $? -ne 0 ]; then
-                displayKo
-                return 1
-            fi
-        fi
         displayOk
     fi
 
-    if [ $OPT_CLEAN_SIP -eq 1 ] || [ $OPT_CLEAN -eq 1 ]; then
-        displayStep "Clean SIP"
+    if [ $OPT_CLEAN_SIP -eq 1 ]; then
+        displayStep "Clean SIP before build"
         dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaCleanSip $OPT_VERBOSE
         if [ $? -ne 0 ]; then
             displayKo
@@ -1124,11 +1120,12 @@ function commandBuild() {
     fi
 
     if [ $OPT_BUILD_DEPS -eq 1 ]; then
-        displayStep "Build dependencies"
+        displayStep "Update dependencies"
         if [ $OPT_VERBOSE -gt 1 ]; then
             displayNfo ""
         fi
-        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaBuildDeps $OPT_QT_DEBUG $OPT_QT_ASAN $OPT_VERBOSE
+
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaInstallDeps $OPT_VERBOSE
         if [ $? -ne 0 ]; then
             if [ $OPT_VERBOSE -eq 1 ]; then
                 displayKo
@@ -1142,7 +1139,7 @@ function commandBuild() {
     displayStep "Current Git repository"
     displayNfo ""
 
-    GITNFO=$(dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildGitNfo)
+    GITNFO=$(dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildGitNfo kritaBuild)
     IFS=$'\n'
     for nfo in $GITNFO
     do
