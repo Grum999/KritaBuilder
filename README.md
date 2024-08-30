@@ -125,7 +125,7 @@ The command **`list`** will provide a list of available environments, and accord
 > Example:
 > Get list of environments, with their size and data source location
 > ```bash
-> ./kbuilder list --size --source-uri
+> ./kbuilder list --size --paths
 > ```
 
 

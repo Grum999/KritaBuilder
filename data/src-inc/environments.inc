@@ -127,6 +127,10 @@ function environmentCreate() {
         displayOk
     done
 
+    if [ "$DATA_PATH" == "@NONE" ]; then
+        DATA_PATH=""
+    fi
+
     # -- create default files
     echo "KRITA_SRC=$KRITA_SRC" > $CFG_FILE
     echo "DATA_PATH=$DATA_PATH" >> $CFG_FILE
