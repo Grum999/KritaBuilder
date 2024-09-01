@@ -13,7 +13,7 @@
 
 # KBuilder Version
 KBUILDER_NAME=KBuilder
-KBUILDER_VERSION=1.1.0
+KBUILDER_VERSION=1.2.0
 
 # current directory
 CDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -217,7 +217,7 @@ function commandHelp() {
     -c,         --count             Display number of environments
     -s,         --size              Display environments size
     -t,         --top               Display running environment top information (cpu, memory)
-    -u,         --source-uri        Display environments source uri
+    -p,         --paths             Display external paths references
 
   If NAME is provided, information are filtered for given environment name
   "
@@ -265,8 +265,6 @@ function commandHelp() {
                 --no-debug          Disable all debug options
                 --no-tests          Disable building of tests
                 --pch               Enable the usage of PCH headers (require huge amount of space on disk)
-                --qt-asan           Enable address sanitizer for Qt (implies --qt-debug)
-                --qt-debug          Enable debugging info for Qt
 
   If NAME is not provided, build will be executed on last environment on which a build has been made
   "
@@ -283,6 +281,9 @@ function commandHelp() {
                                     - callgrind (by default it will start 'off')
     -a,         --appimage          Run last built appimage, if any
     -sFACTOR,   --scale=FACTOR      Define scale factor for UI
+    -r          --reset             Reset Krita configuration & resources
+                --reset-config      Reset Krita configuration
+                --reset-resources   Reset Krita resources
 
     If NAME is not provided, Krita will be started from last environment on which a build has been made
   "
@@ -372,7 +373,7 @@ function commandNew() {
     OPT_NO_BUILD=0
     OPT_CLONE_FROM=
     OPT_SOURCE_PATH="https://invent.kde.org/graphics/krita.git"
-    OPT_DATA_PATH=""
+    OPT_DATA_PATH="@NONE"
     OPT_ENVNAME=
 
     while true; do
@@ -470,7 +471,7 @@ function commandNew() {
         displayOk
     fi
 
-    if [[ "$OPT_DATA_PATH" != "" ]]; then
+    if [[ "$OPT_DATA_PATH" != "@NONE" ]]; then
         displayStep "Check data directory"
         if [ ! -d "$OPT_DATA_PATH" ]; then
             displayKo
@@ -480,13 +481,21 @@ function commandNew() {
         displayOk
     fi
 
-    environmentCreate $ENVIRONMENT_NAME $OPT_SOURCE_PATH $OPT_DATA_PATH || exit 1
+    environmentCreate $ENVIRONMENT_NAME $OPT_SOURCE_PATH $OPT_DATA_PATH $KBUILDER_VERSION || exit 1
     dockerImageCreate $ENVIRONMENT_NAME $OPT_NO_CACHE || exit 1
     dockerContainerRun $ENVIRONMENT_NAME || exit 1
     environmentLastStarted ADD $ENVIRONMENT_NAME
 
+    displayStep "Install dependencies"
+    dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaInstallDeps $OPT_VERBOSE
+    if [ $? -ne 0 ]; then
+        displayKo
+        return 1
+    fi
+    displayOk
+
     if [ $OPT_NO_BUILD -eq 0 ]; then
-        commandBuild commandBuild --deps
+        commandBuild commandBuild
     fi
 
     return $?
@@ -693,12 +702,12 @@ function commandList() {
     COMMAND="$1"
     shift
 
-    ARGS=$(checkArgs "$COMMAND" "htsuc" "help,top,size,source-uri,count" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    ARGS=$(checkArgs "$COMMAND" "htspc" "help,top,size,paths,count" "$(getDefaultArgs $COMMAND) $@") || exit $?
     eval set -- "$ARGS"
 
     OPT_TOP=0
     OPT_SIZE=0
-    OPT_SRC_URI=0
+    OPT_PATHS=0
     OPT_COUNT=0
 
     while true; do
@@ -713,8 +722,8 @@ function commandList() {
             -s | --size)
                 OPT_SIZE=1
                 ;;
-            -u | --src-uri)
-                OPT_SRC_URI=1
+            -p | --paths)
+                OPT_PATHS=1
                 ;;
             -c | --count)
                 OPT_COUNT=1
@@ -773,6 +782,7 @@ function commandList() {
         DOT_NAME=".................."
         SPACES_NAME="                   "
         SPACES_STATUS="              "
+        SPACES_NFO="                                                                         "
         SEP_LINE=""
         for ENV_NAME in ${ENV_LIST[@]}; do
             display $SEP_LINE -n
@@ -784,10 +794,18 @@ function commandList() {
             fi
             ENV_NFO="$ENV_NFO $ENV_STATUS${SPACES_STATUS:${#ENV_STATUS}}"
 
-            if [ $OPT_SRC_URI -eq 1 ]; then
+            if [ $OPT_PATHS -eq 1 ]; then
                 source $(environmentConfigFile $ENV_NAME)
 
-                ENV_NFO="$ENV_NFO $KRITA_SRC"
+                NLINE_SPACES="${SPACES_NFO:${#ENV_NFO}}"
+
+                ENV_NFO="$ENV_NFO SOURCE-PATH: $KRITA_SRC"
+                if [ "$DATA_PATH" != "" ]; then
+                    ENV_NFO="$ENV_NFO\n$NLINE_SPACES DATA-PATH:   $DATA_PATH"
+                    if [ $OPT_SIZE -eq 0 ]; then
+                        ENV_NFO="$ENV_NFO\n"
+                    fi
+                fi
             fi
 
             displayNfo "- $ENV_NFO"
@@ -890,7 +908,7 @@ function commandStart() {
     fi
 
     for ENV_NAME in ${ENV_LIST[@]}; do
-        dockerContainerRun $ENV_NAME 1 $OPT_RESTART
+        dockerContainerStart $ENV_NAME 1 $OPT_RESTART
         environmentLastStarted ADD $ENV_NAME
     done
 
@@ -975,7 +993,7 @@ function commandBuild() {
     COMMAND="$1"
     shift
 
-    ARGS=$(checkArgs "$COMMAND" "hacsj:rdvt" "help,appimage,clean,clean-sip,jobs:,run,pch,no-tests,deps,krita-asan,qt-asan,qt-debug,verbose,time,no-debug" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    ARGS=$(checkArgs "$COMMAND" "hacsj:rdvt" "help,appimage,clean,clean-sip,jobs:,run,pch,no-tests,deps,krita-asan,verbose,time,no-debug" "$(getDefaultArgs $COMMAND) $@") || exit $?
     eval set -- "$ARGS"
 
     OPT_APPIMG=0
@@ -984,8 +1002,6 @@ function commandBuild() {
     OPT_RUN_KRITA=0
     OPT_JOBS=$(nproc)
     OPT_BUILD_DEPS=0
-    OPT_QT_DEBUG=0
-    OPT_QT_ASAN=0
     OPT_ENABLE_PCH=0
     OPT_ENABLE_TESTS=1
     OPT_ENABLE_DEBUG=1
@@ -1004,9 +1020,14 @@ function commandBuild() {
                 ;;
             -c | --clean)
                 OPT_CLEAN=1
+                # clean implies clean-sip
+                OPT_CLEAN_SIP=1
                 ;;
             -d | --deps)
                 OPT_BUILD_DEPS=1
+                # updating dependencies implies to clean and rebuild krita
+                OPT_CLEAN=1
+                OPT_CLEAN_SIP=1
                 ;;
             -s | --clean-sip)
                 OPT_CLEAN_SIP=1
@@ -1036,12 +1057,6 @@ function commandBuild() {
             --pch)
                 OPT_ENABLE_PCH=1
                 ;;
-            --qt-asan)
-                OPT_QT_ASAN=1
-                ;;
-            --qt-debug)
-                OPT_QT_DEBUG=1
-                ;;
             --)
                 shift
                 break
@@ -1067,7 +1082,10 @@ function commandBuild() {
 
     if [ "$ENVIRONMENT_NAME" == "" ]; then
         # search for last started Environment
-        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        ENVIRONMENT_NAME=$(environmentLastBuiltOrExecuted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        fi
         if [ "$ENVIRONMENT_NAME" == "" ]; then
             ENVIRONMENT_NAME=$(environmentLastCreated GET)
         fi
@@ -1091,6 +1109,8 @@ function commandBuild() {
 
     displayOk
 
+    environmentLastBuiltOrExecuted ADD $ENVIRONMENT_NAME
+
     dockerContainerRun $ENVIRONMENT_NAME 1
 
     dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildLogStart
@@ -1103,18 +1123,11 @@ function commandBuild() {
             displayKo
             return 1
         fi
-        if [ $OPT_BUILD_DEPS -eq 1 ]; then
-            dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaCleanDeps $OPT_VERBOSE
-            if [ $? -ne 0 ]; then
-                displayKo
-                return 1
-            fi
-        fi
         displayOk
     fi
 
-    if [ $OPT_CLEAN_SIP -eq 1 ] || [ $OPT_CLEAN -eq 1 ]; then
-        displayStep "Clean SIP"
+    if [ $OPT_CLEAN_SIP -eq 1 ]; then
+        displayStep "Clean SIP before build"
         dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaCleanSip $OPT_VERBOSE
         if [ $? -ne 0 ]; then
             displayKo
@@ -1124,11 +1137,12 @@ function commandBuild() {
     fi
 
     if [ $OPT_BUILD_DEPS -eq 1 ]; then
-        displayStep "Build dependencies"
+        displayStep "Update dependencies"
         if [ $OPT_VERBOSE -gt 1 ]; then
             displayNfo ""
         fi
-        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaBuildDeps $OPT_QT_DEBUG $OPT_QT_ASAN $OPT_VERBOSE
+
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaInstallDeps $OPT_VERBOSE
         if [ $? -ne 0 ]; then
             if [ $OPT_VERBOSE -eq 1 ]; then
                 displayKo
@@ -1142,7 +1156,7 @@ function commandBuild() {
     displayStep "Current Git repository"
     displayNfo ""
 
-    GITNFO=$(dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildGitNfo)
+    GITNFO=$(dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC buildGitNfo kritaBuild)
     IFS=$'\n'
     for nfo in $GITNFO
     do
@@ -1195,12 +1209,15 @@ function commandKrita() {
     COMMAND="$1"
     shift
 
-    ARGS=$(checkArgs "$COMMAND" "has:d:" "help,appimage,scale:,debug:" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    ARGS=$(checkArgs "$COMMAND" "has:d:r" "help,appimage,scale:,debug:,reset,reset-config,reset-resources" "$(getDefaultArgs $COMMAND) $@") || exit $?
     eval set -- "$ARGS"
 
     OPT_APPIMG=0
     OPT_SCALE=
     OPT_DEBUG=
+    OPT_RESET=""
+    OPT_RESET_CONFIG="n"
+    OPT_RESET_RESOURCES="n"
 
     while true; do
         case "$1" in
@@ -1214,6 +1231,16 @@ function commandKrita() {
             -d | --debug)
                 shift
                 OPT_DEBUG=$1
+                ;;
+            -r | --reset)
+                OPT_RESET_CONFIG="y"
+                OPT_RESET_RESOURCES="y"
+                ;;
+            --reset-config)
+                OPT_RESET_CONFIG="y"
+                ;;
+            --reset-resources)
+                OPT_RESET_RESOURCES="y"
                 ;;
             -s | --scale)
                 shift
@@ -1240,7 +1267,10 @@ function commandKrita() {
 
     if [ "$ENVIRONMENT_NAME" == "" ]; then
         # search for last started Environment
-        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        ENVIRONMENT_NAME=$(environmentLastBuiltOrExecuted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        fi
         if [ "$ENVIRONMENT_NAME" == "" ]; then
             ENVIRONMENT_NAME=$(environmentLastCreated GET)
         fi
@@ -1263,6 +1293,18 @@ function commandKrita() {
     esac
 
     displayOk
+
+    environmentLastBuiltOrExecuted ADD $ENVIRONMENT_NAME
+
+    if [ "$OPT_RESET_CONFIG" = "y" ]; then
+        OPT_RESET="c"
+    fi
+    if [ "$OPT_RESET_RESOURCES" = "y" ]; then
+        OPT_RESET="r$OPT_RESET"
+    fi
+    if [ "$OPT_RESET" != "" ]; then
+        OPT_RESET="--reset=$OPT_RESET"
+    fi
 
     if [ $OPT_APPIMG -eq 0 ]; then
         displayStep "Start from environment built from"
@@ -1296,8 +1338,12 @@ function commandKrita() {
             OPT_DEBUG=
         fi
 
-        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaExec $OPT_DEBUG "$OPT_KRITA"
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaExec $OPT_DEBUG $OPT_RESET "$OPT_KRITA"
     else
+        if [ "$OPT_RESET" != "" ]; then
+            displayNfo ".. Warning: --reset options are ignored with AppImage"
+        fi
+
         if [ "$OPT_DEBUG" != "" ]; then
             displayNfo ".. Warning: can't debug AppImage"
         fi

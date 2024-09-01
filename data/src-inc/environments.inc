@@ -55,6 +55,32 @@ function environmentLastCreated() {
     fi
 }
 
+function environmentLastBuiltOrExecuted() {
+    # $1 command
+    #       GET     return last built/executed environment
+    #       ADD     add environment ($2) as last built/executed environment
+    #       DEL     delete environment ($2) from last built/executed environment list
+    #       REN     rename environment ($2 as $3) from last built/executed environment list
+    local ACTION=$1
+    local ENV_NAME=$2
+    local CFG_FILE=$CDIR/data/.last-builtorexec
+
+    if [ "$ACTION" == "GET" ]; then
+        # return last built/executed environment
+        echo $(tail -1 $CFG_FILE)
+    elif [ "$ACTION" == "ADD" ]; then
+        echo "$ENV_NAME" >> $CFG_FILE
+    elif [ "$ACTION" == "DEL" ]; then
+        sed -i "/^$ENV_NAME$/d" $CFG_FILE
+    elif [ "$ACTION" == "REN" ]; then
+        local $ENV_NEWNAME=$3
+        sed -i "s/^$ENV_NAME$/$ENV_NEWNAME/g" $CFG_FILE
+    else
+        echo "environmentLastBuiltOrExecuted invalid action ($ACTION)"
+        exit 1
+    fi
+}
+
 
 function environmentPathName() {
     # return full path for environment $1
@@ -106,6 +132,7 @@ function environmentCreate() {
     local ENV_NAME=$1
     local KRITA_SRC=$2
     local DATA_PATH=$3
+    local KBUILDER_VERSION=$4
     local ENV_PATH="$(environmentPathName $ENV_NAME)"
     local CFG_FILE="$(environmentConfigFile $ENV_NAME)"
     local DIRECTORIES=("$ENV_PATH/appimages"
@@ -115,8 +142,8 @@ function environmentCreate() {
                        "$ENV_PATH/workspace/deps/usr"
                        "$ENV_PATH/workspace/krita.appdir/usr"
                        "$ENV_PATH/workspace/krita-build"
-                       "$ENV_PATH/.docker-config/mc"
-                       "$ENV_PATH/.docker-config/htop"
+                       "$ENV_PATH/.docker-config"
+                       "$ENV_PATH/.docker-local"
                        )
 
     # -- create directories
@@ -126,10 +153,17 @@ function environmentCreate() {
         displayOk
     done
 
+    if [ "$DATA_PATH" == "@NONE" ]; then
+        DATA_PATH=""
+    fi
+
     # -- create default files
     echo "KRITA_SRC=$KRITA_SRC" > $CFG_FILE
     echo "DATA_PATH=$DATA_PATH" >> $CFG_FILE
     echo "QT_SCALE_FACTOR=1.0" >> $CFG_FILE
+    echo "BUILD_KBUILDER=$KBUILDER_VERSION" >> $CFG_FILE
+    echo "BUILD_DATE=$(date +'%Y-%m-%d')" >> $CFG_FILE
+    echo "BUILD_TIME=$(date +'%H:%M:%S')" >> $CFG_FILE
 
     if [[ "$KRITA_SRC" =~ ^https?:// ]]; then
         displayStep "Clone remote Krita git repository"
@@ -171,6 +205,7 @@ function environmentCleanup() {
     rm -rf $ENV_PATH || return 1
     environmentLastCreated DEL $ENV_NAME
     environmentLastStarted DEL $ENV_NAME
+    environmentLastBuiltOrExecuted DEL $ENV_NAME
     displayOk
     return 0
 }
@@ -190,6 +225,7 @@ function environmentRename() {
     mv $ENV_OLDPATH $ENV_NEWPATH || return 1
     environmentLastCreated REN $ENV_OLDNAME $ENV_NEWNAME
     environmentLastStarted REN $ENV_OLDNAME $ENV_NEWNAME
+    environmentLastBuiltOrExecuted REN $ENV_OLDNAME $ENV_NEWNAME
     displayOk
     return 0
 }

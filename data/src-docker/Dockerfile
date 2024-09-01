@@ -18,15 +18,16 @@ RUN apt-get -y install curl \
                        time \
                        mc \
                        htop \
+                       python3.8-venv \
                        cpu-checker # for kvm-ok command
 
 RUN update-alternatives --set gcc /usr/bin/gcc-11
 RUN update-alternatives --set g++ /usr/bin/g++-11
 
 ENV USRHOME=/home/appimage
-ENV KRITA_WS_PATH=${USER_HOME}/build/appimage-workspace
-ENV KRITA_SRC_PATH=${USER_HOME}/build/src/krita
-ENV KRITA_APPIMG_PATH=${USER_HOME}/build/appimages
+ENV KRITA_WS_PATH=${USRHOME}/build/appimage-workspace
+ENV KRITA_SRC_PATH=${USRHOME}/build/src/krita
+ENV KRITA_APPIMG_PATH=${USRHOME}/build/appimages
 
 RUN chsh -s /bin/bash appimage
 
@@ -43,11 +44,13 @@ RUN echo 'prepend PATH ~/bin/' >> $USRHOME/.bashrc
 
 RUN mkdir -p $KRITA_WS_PATH/krita.appdir/usr && \
     mkdir -p $KRITA_WS_PATH/krita-build && \
-    mkdir -p $KRITA_WS_PATH/deps/usr && \
+    mkdir -p $KRITA_WS_PATH/deps && \
+    mkdir -p $KRITA_WS_PATH/deps-build && \
     mkdir -p $KRITA_APPIMG_PATH && \
     mkdir -p $USRHOME/build/src/downloads && \
     mkdir -p $USRHOME/.config && \
     mkdir -p $USRHOME/.config/gdb && \
+    mkdir -p $USRHOME/.local && \
     mkdir -p $USRHOME/bin && \
     mkdir -p $USRHOME/data
 

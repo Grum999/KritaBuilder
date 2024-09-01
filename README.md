@@ -100,11 +100,12 @@ All files (source code, binaries, ...) are NOT stored in the docker but in **Kri
 
 | Directory | Description |
 | --- | --- |
-| `.docker-config` | Is the `~/.config` directory of your docker<br>It allows to keep persistent data setup even if Docker is stopped |
+| `.docker-config` | Is the `~/.config` directory of your docker<br>It allows to keep persistent data setup |
+| `.docker-local` | Is the `~/.local` directory of your docker<br>It allows to keep persistent data setup and provide an easy way to access to Krita's ressources |
 | `appimages` | Is the place where appimages are built |
 | `data` | Is the `~/data` directory of your docker<br>It allows you to access to persistent data from/to the docker (get access from your computer to `.kra` files saved in `~/data` for example) |
-| `sources` | Is the place where *Krita* repository will be cloned (if not provided) and dependencies sources will be downloaded |
-| `workspaces` |Is the place where *Krita* build files will be produced |
+| `sources` | Is the place where *Krita* repository will be cloned (if a local repository is not provided) and dependencies sources will be downloaded |
+| `workspaces` | Is the place where *Krita* build files will be produced |
 
 ### Start and Stop environments
 
@@ -125,7 +126,7 @@ The command **`list`** will provide a list of available environments, and accord
 > Example:
 > Get list of environments, with their size and data source location
 > ```bash
-> ./kbuilder list --size --source-uri
+> ./kbuilder list --size --paths
 > ```
 
 
