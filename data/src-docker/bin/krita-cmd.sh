@@ -262,7 +262,7 @@ function kritaBuildAppImage() {
 }
 
 function kritaExec() {
-    ARGS=$(getopt -o "s:d:" -l "scale:,debug:" -- "$@")
+    ARGS=$(getopt -o "s:d:r:" -l "scale:,debug:,reset:" -- "$@")
     eval set -- "$ARGS"
 
     EXEC=
@@ -272,6 +272,20 @@ function kritaExec() {
 
     while true; do
         case "$1" in
+            -r | --reset)
+                shift
+                OPT_RESET=$1
+
+                if [[ "$OPT_RESET" =~ c ]]; then
+                    echo ".. Reset configuration"
+                    rm -f ~/.config/krita*
+                fi
+                if [[ "$OPT_RESET" =~ r ]]; then
+                    echo ".. Reset resources"
+                    rm -rf ~/.local/share/krita
+                    rm -f ~/.local/share/krita*
+                fi
+                ;;
             -s | --scale)
                 shift
                 export QT_SCALE_FACTOR=$1
@@ -291,7 +305,6 @@ function kritaExec() {
                     echo ".. Execute debug: callgrind"
                     EXEC="valgrind --tool=callgrind --callgrind-out-file=$DEBUGLOG_FILE $KRITADIR_BIN"
                 fi
-                break
                 ;;
             --)
                 shift

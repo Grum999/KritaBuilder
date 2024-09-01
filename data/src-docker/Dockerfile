@@ -50,6 +50,7 @@ RUN mkdir -p $KRITA_WS_PATH/krita.appdir/usr && \
     mkdir -p $USRHOME/build/src/downloads && \
     mkdir -p $USRHOME/.config && \
     mkdir -p $USRHOME/.config/gdb && \
+    mkdir -p $USRHOME/.local && \
     mkdir -p $USRHOME/bin && \
     mkdir -p $USRHOME/data
 

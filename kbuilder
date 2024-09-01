@@ -281,6 +281,9 @@ function commandHelp() {
                                     - callgrind (by default it will start 'off')
     -a,         --appimage          Run last built appimage, if any
     -sFACTOR,   --scale=FACTOR      Define scale factor for UI
+    -r          --reset             Reset Krita configuration & resources
+                --reset-config      Reset Krita configuration
+                --reset-resources   Reset Krita resources
 
     If NAME is not provided, Krita will be started from last environment on which a build has been made
   "
@@ -1079,7 +1082,10 @@ function commandBuild() {
 
     if [ "$ENVIRONMENT_NAME" == "" ]; then
         # search for last started Environment
-        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        ENVIRONMENT_NAME=$(environmentLastBuiltOrExecuted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        fi
         if [ "$ENVIRONMENT_NAME" == "" ]; then
             ENVIRONMENT_NAME=$(environmentLastCreated GET)
         fi
@@ -1102,6 +1108,8 @@ function commandBuild() {
     esac
 
     displayOk
+
+    environmentLastBuiltOrExecuted ADD $ENVIRONMENT_NAME
 
     dockerContainerRun $ENVIRONMENT_NAME 1
 
@@ -1201,12 +1209,15 @@ function commandKrita() {
     COMMAND="$1"
     shift
 
-    ARGS=$(checkArgs "$COMMAND" "has:d:" "help,appimage,scale:,debug:" "$(getDefaultArgs $COMMAND) $@") || exit $?
+    ARGS=$(checkArgs "$COMMAND" "has:d:r" "help,appimage,scale:,debug:,reset,reset-config,reset-resources" "$(getDefaultArgs $COMMAND) $@") || exit $?
     eval set -- "$ARGS"
 
     OPT_APPIMG=0
     OPT_SCALE=
     OPT_DEBUG=
+    OPT_RESET=""
+    OPT_RESET_CONFIG="n"
+    OPT_RESET_RESOURCES="n"
 
     while true; do
         case "$1" in
@@ -1220,6 +1231,16 @@ function commandKrita() {
             -d | --debug)
                 shift
                 OPT_DEBUG=$1
+                ;;
+            -r | --reset)
+                OPT_RESET_CONFIG="y"
+                OPT_RESET_RESOURCES="y"
+                ;;
+            --reset-config)
+                OPT_RESET_CONFIG="y"
+                ;;
+            --reset-resources)
+                OPT_RESET_RESOURCES="y"
                 ;;
             -s | --scale)
                 shift
@@ -1246,7 +1267,10 @@ function commandKrita() {
 
     if [ "$ENVIRONMENT_NAME" == "" ]; then
         # search for last started Environment
-        ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        ENVIRONMENT_NAME=$(environmentLastBuiltOrExecuted GET)
+        if [ "$ENVIRONMENT_NAME" == "" ]; then
+            ENVIRONMENT_NAME=$(environmentLastStarted GET)
+        fi
         if [ "$ENVIRONMENT_NAME" == "" ]; then
             ENVIRONMENT_NAME=$(environmentLastCreated GET)
         fi
@@ -1269,6 +1293,18 @@ function commandKrita() {
     esac
 
     displayOk
+
+    environmentLastBuiltOrExecuted ADD $ENVIRONMENT_NAME
+
+    if [ "$OPT_RESET_CONFIG" = "y" ]; then
+        OPT_RESET="c"
+    fi
+    if [ "$OPT_RESET_RESOURCES" = "y" ]; then
+        OPT_RESET="r$OPT_RESET"
+    fi
+    if [ "$OPT_RESET" != "" ]; then
+        OPT_RESET="--reset=$OPT_RESET"
+    fi
 
     if [ $OPT_APPIMG -eq 0 ]; then
         displayStep "Start from environment built from"
@@ -1302,8 +1338,12 @@ function commandKrita() {
             OPT_DEBUG=
         fi
 
-        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaExec $OPT_DEBUG "$OPT_KRITA"
+        dockerContainerExec -ti $ENVIRONMENT_NAME $KRITA_EXEC kritaExec $OPT_DEBUG $OPT_RESET "$OPT_KRITA"
     else
+        if [ "$OPT_RESET" != "" ]; then
+            displayNfo ".. Warning: --reset options are ignored with AppImage"
+        fi
+
         if [ "$OPT_DEBUG" != "" ]; then
             displayNfo ".. Warning: can't debug AppImage"
         fi

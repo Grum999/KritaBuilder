@@ -55,6 +55,32 @@ function environmentLastCreated() {
     fi
 }
 
+function environmentLastBuiltOrExecuted() {
+    # $1 command
+    #       GET     return last built/executed environment
+    #       ADD     add environment ($2) as last built/executed environment
+    #       DEL     delete environment ($2) from last built/executed environment list
+    #       REN     rename environment ($2 as $3) from last built/executed environment list
+    local ACTION=$1
+    local ENV_NAME=$2
+    local CFG_FILE=$CDIR/data/.last-builtorexec
+
+    if [ "$ACTION" == "GET" ]; then
+        # return last built/executed environment
+        echo $(tail -1 $CFG_FILE)
+    elif [ "$ACTION" == "ADD" ]; then
+        echo "$ENV_NAME" >> $CFG_FILE
+    elif [ "$ACTION" == "DEL" ]; then
+        sed -i "/^$ENV_NAME$/d" $CFG_FILE
+    elif [ "$ACTION" == "REN" ]; then
+        local $ENV_NEWNAME=$3
+        sed -i "s/^$ENV_NAME$/$ENV_NEWNAME/g" $CFG_FILE
+    else
+        echo "environmentLastBuiltOrExecuted invalid action ($ACTION)"
+        exit 1
+    fi
+}
+
 
 function environmentPathName() {
     # return full path for environment $1
@@ -116,8 +142,8 @@ function environmentCreate() {
                        "$ENV_PATH/workspace/deps/usr"
                        "$ENV_PATH/workspace/krita.appdir/usr"
                        "$ENV_PATH/workspace/krita-build"
-                       "$ENV_PATH/.docker-config/mc"
-                       "$ENV_PATH/.docker-config/htop"
+                       "$ENV_PATH/.docker-config"
+                       "$ENV_PATH/.docker-local"
                        )
 
     # -- create directories
@@ -179,6 +205,7 @@ function environmentCleanup() {
     rm -rf $ENV_PATH || return 1
     environmentLastCreated DEL $ENV_NAME
     environmentLastStarted DEL $ENV_NAME
+    environmentLastBuiltOrExecuted DEL $ENV_NAME
     displayOk
     return 0
 }
@@ -198,6 +225,7 @@ function environmentRename() {
     mv $ENV_OLDPATH $ENV_NEWPATH || return 1
     environmentLastCreated REN $ENV_OLDNAME $ENV_NEWNAME
     environmentLastStarted REN $ENV_OLDNAME $ENV_NEWNAME
+    environmentLastBuiltOrExecuted REN $ENV_OLDNAME $ENV_NEWNAME
     displayOk
     return 0
 }

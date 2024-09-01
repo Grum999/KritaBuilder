@@ -199,15 +199,14 @@ function dockerContainerRun() {
 
     source $CFG_FILE
 
-
     if [[ -e /dev/kvm ]]; then
         OPT_KVM+="--device /dev/kvm"
     fi
 
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/data-env:$APPIMG_USER_HOME/data-env:rw"
     DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/appimages:$APPIMG_KRITA_APPIMG_PATH:rw"
-    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-config/mc:$APPIMG_USER_HOME/.config/mc:rw"
-    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-config/htop:$APPIMG_USER_HOME/.config/htop:rw"
+    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-config:$APPIMG_USER_HOME/.config:rw"
+    DOCKER_MOUNTS="$DOCKER_MOUNTS -v $ENV_PATH/.docker-local:$APPIMG_USER_HOME/.local:rw"
 
     if [ "$DATA_PATH" != "" ]; then
         DOCKER_MOUNTS="$DOCKER_MOUNTS -v $DATA_PATH:$APPIMG_USER_HOME/data:rw"
@@ -264,7 +263,7 @@ function dockerContainerRun() {
     ${DOCKER_BINARY} container run -P -t -d \
     $DOCKER_MOUNTS \
     -v /tmp/.X11-unix/:/tmp/.X11-unix \
-    -v $XAUTHORITY:$XAUTHORITY:ro \
+    -v $XAUTHORITY:$APPIMG_USER_HOME/.Xauthority:ro \
     -v /etc/localtime:/etc/localtime:ro \
     -e DISPLAY \
     -e XAUTHORITY \
@@ -395,6 +394,13 @@ function dockerContainerStart {
         display "N/A (already running)"
         return 0
     fi
+
+    dockerContainerExists $ENV_NAME
+    if [ $? -eq 0 ]; then
+        dockerContainerRun $ENV_NAME 0 1
+        return $?
+    fi
+
 
     CONTAINER_ID=$(${DOCKER_BINARY} container ls --filter name=^$ENV_NAME$ --filter status=exited -q -a)
 
