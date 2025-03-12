@@ -1,5 +1,9 @@
 # Krita Builder
 
+> Note: has been moved on Codeberg
+> 
+> https://codeberg.org/Grum999/KritaBuilder
+
 This tool is based on [Dmitry Kazakov Krita build docker](https://invent.kde.org/dkazakov/krita-docker-env.git), itself based on the official [KDE build environment](https://binary-factory.kde.org/job/Krita_Nightly_Appimage_Dependency_Build/) that in used on KDE CI for building official AppImage packages.
 
 ## Prerequisites
